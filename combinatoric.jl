@@ -370,12 +370,12 @@ end
 
 function get_vprops(g::MetaDiGraph, propname)
     out = []
-    try
-        for v in vertices(g)
+    for v in vertices(g)
+        try
             push!(out, get_prop(g, v, propname))
+        catch KeyError
+            println("There are vertices without the property $propname")
         end
-    catch KeyError
-        println("There are vertices without the property $propname")
     end
     return out
 end
