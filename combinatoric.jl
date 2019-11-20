@@ -204,6 +204,30 @@ function traversion_tree(graph::SimpleDiGraph{T}) where {T<:Int}
 end
 
 
+function left(g::MetaDiGraph, v::Int)
+    out = sorted_outneighbors(g, v)
+    return out[1]
+end
+
+
+function right(g::MetaDiGraph, v::Int)
+    out = sorted_outneighbors(g, v)
+    return out[2]
+end
+
+function opposite_vertex(g::MetaDiGraph, v::Int)
+    try
+        left(g, right(g, v))
+    catch KeyError
+        try
+            right(g, left(g, v))
+        catch KeyError
+            println("There is no outer opposite vertex")
+        end
+    end
+end
+
+
 """
     set_vprops!(g::MetaDiGraph{T,S}, list::AbstractArray, propname) where {T<:Int, S<:Any}
 
@@ -277,11 +301,47 @@ function set_vprops!(g::MetaDiGraph{T,S}, func::Function, argname, propname)  wh
     for v in vertices(g)
         out = outneighbors(g, v)
         if length(out)==2
-            w2, w1 = sort(outneighbors(g, v))
+            w2, w1 = sorted_outneighbors(g, v)
             arg = get_prop(g, v, argname)
             arg1 = get_prop(g, w1, argname)
             arg2 = get_prop(g, w2, argname)
             set_prop!(g, v, propname, func(arg, arg1, arg2))
+        end
+    end
+end
+
+
+function set_vprops_out!(g::MetaDiGraph{T,S}, func::Function, argname, propname; argnum=3)  where {T<:Int, S<:Any}
+    if argnum == 3
+        for v in vertices(g)
+            out = outneighbors(g, v)
+            if length(out)==2
+                w2, w1 = sorted_outneighbors(g, v)
+                arg = get_prop(g, v, argname)
+                arg1 = get_prop(g, w1, argname)
+                arg2 = get_prop(g, w2, argname)
+                set_prop!(g, v, propname, func(arg, arg1, arg2))
+            end
+        end
+    elseif argnum == 2
+        for e in edges(g)
+            s, t = src(e), dst(e)
+            arg1 = get_prop(g, s, argname)
+            arg2 = get_prop(g, t, argname)
+            set_prop!(g, s, :propname, func(arg1, arg2))
+        end
+    end
+end
+
+function set_vprops_inn!(g::MetaDiGraph{T,S}, func::Function, argname, propname)  where {T<:Int, S<:Any}
+    for v in vertices(g)
+        inn = inneighbors(g, v)
+        if length(inn)==2
+            w1, w2 = sorted_innneighbors(g, v)
+            arg = get_prop(g, v, argname)
+            arg1 = get_prop(g, w1, argname)
+            arg2 = get_prop(g, w2, argname)
+            set_prop!(g, v, propname, func(arg, arg2, arg1))
         end
     end
 end
@@ -380,6 +440,33 @@ function get_vprops(g::MetaDiGraph, propname)
     return out
 end
 
+function sorted_outneighbors(g::MetaDiGraph, v::Int)
+    out = outneighbors(g,v)
+    res = []
+    for o in out
+        if get_prop(g, v, o, :dir)=="left"
+            pushfirst!(res, o)
+        else
+            push!(res, o)
+        end
+    end
+    return res
+end
+
+function sorted_innneighbors(g::MetaDiGraph, v::Int)
+    inn = inneighbors(g,v)
+    res = []
+    for o in inn
+        if get_prop(g, o, v, :dir)=="left"
+            pushfirst!(res, o)
+        else
+            push!(res, o)
+        end
+    end
+    return res
+end
+
+
 function set_eprops!(g::MetaDiGraph{T,S}, data::AbstractArray, propname;
                      type="none", dim=zeros(2)) where {T<:Int, S<:Any}
     m, n = dim
@@ -393,7 +480,7 @@ function set_eprops!(g::MetaDiGraph{T,S}, data::AbstractArray, propname;
             n = convert(Int, length(vertices(g))÷m)
         end
     end
-    if type=="grid" || type=="none"
+    if type=="grid" || type=="none" || type=="cylinder"
         for v in vertices(g)
             out = outneighbors(g, v)
             if length(out)==2
@@ -401,6 +488,7 @@ function set_eprops!(g::MetaDiGraph{T,S}, data::AbstractArray, propname;
                 set_prop!(g, v, w2, propname, data[v][1])
                 set_prop!(g, v, w1, propname, data[v][2])
             elseif length(out)==1
+                @show v, out
                 if v%m==0
                     set_prop!(g, v, out[1], propname, data[v][1])
                 else
@@ -408,7 +496,6 @@ function set_eprops!(g::MetaDiGraph{T,S}, data::AbstractArray, propname;
                 end
             end
         end
-    elseif type=="cylinder"
     elseif type=="zigzag"
         for v in vertices(g)
             out = outneighbors(g, v)
@@ -427,11 +514,16 @@ function set_eprops!(g::MetaDiGraph{T,S}, data::AbstractArray, propname;
     end
 end
 
-function set_eprops_from_v(g::MetaDiGraph{T,S}, func::Function, propname) where {T<:Int, S<:Any}
+function set_eprops!(g::MetaDiGraph, func::Function, argname::Symbol, propname::Symbol)
     for e in edges(g)
-        set_prop!(g, e, propname, func(src(e), dst(e)))
+        s, t = src(e), dst(e)
+        arg1 = get_prop(g, s, argname)
+        arg2 = get_prop(g, t, argname)
+        set_prop!(g, s, :propname, func(arg1, arg2))
     end
 end
+
+
 
 function print_eprop(g::MetaDiGraph{T,S}, name) where {T<:Int, S<:Any}
     for e in edges(g)
@@ -448,7 +540,7 @@ end
 function get_eprops(g::MetaDiGraph, name)
     out = []
     for e in edges(g)
-        out.append(get_prop(g, e, name))
+        push!(out, get_prop(g, e, name))
     end
 end
 
@@ -564,17 +656,3 @@ function get_quads(g::MetaDiGraph)::Array{Array{Int, 1}, 1}
     end
     return quads
 end
-
-
-g = zigzag([5,4])
-
-tri = get_triangles(g)
-
-ed = collect(edges(g))
-
-gr = di_grid([5,4])
-
-tri2 = get_triangles(gr)
-cyl = cylinder([5,4])
-
-quads = get_quads(cyl)

@@ -59,7 +59,7 @@ function dataFromGauss(gauss::Array{Quaternion, 2}, func::Function)
     output = Array{Any, 2}(undef, m, n-1)
     for i=1:m
         for j=1:n-1
-            output[i, j] = func(gauss[i,j], gauss[nw(i,j,m)...],gauss[no(i,j,m)...])
+            output[i, j] = func(gauss[i,j], gauss[no(i,j,m)...],gauss[nw(i,j,m)...])
         end
     end
     output
@@ -115,15 +115,6 @@ function geoKnet(gauss::Array{Quaternion, 2}; f0=zero(Quaternion)::Quaternion,
         end
         return surf
     end
-end
-
-function uMatrix(delta, dh)
-    t -> [cot(delta/2)*exp(im*dh) im*exp(t);im*exp(t) cot(delta/2)*exp(-im*dh)]
-end
-
-function vMatrix(delta, hij)
-    t -> [1 im*exp(-t)*tan(delta/2)*exp(im*hij);
-          im*exp(-t)*tan(delta/2)*exp(-im*hij) 1]
 end
 
 diff_u(t) = [0 im*exp(t);im*exp(t) 0]

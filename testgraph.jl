@@ -64,13 +64,6 @@ function knet!(g::MetaDiGraph; f0=zero(Quaternion{Float64}))
                         n1 = get_prop(g, w, :gauss)
                         f1 = nextF(n, n1, f)
                         set_prop!(g, w, :surface, f1)
-                    elseif get_prop(g, v, w, :dir)=="right" && haskey(props(g, w), :surface)
-                        f = get_prop(g, v, :surface)
-                        n = get_prop(g, v, :gauss)
-                        n1 = get_prop(g, w, :gauss)
-                        newf1 = nextF(n1, n, f)
-                        oldf1 = get_prop(g, w, :surface)
-                        @show abs(newf1-oldf1)
                     end
                 end
             else
@@ -124,13 +117,143 @@ function testknet(g::MetaDiGraph)
     end
 end
 
+
+function setup_h!(g::MetaDiGraph)
+    m, n = get_prop(g, :dim)
+    set_prop!(g, 1, :h, 0)
+    set_prop!(g, 2*m, :h, 0)
+    #fill lowest layer first with the inner angles
+    if get_prop(g, :type)=="zigzag"
+        S = 0.5*sum([(-1)^k*get_prop(g, m+k, :iangle) for k=1:m])
+        T = 0.5*sum([(-1)^k*get_prop(g, k, :oangle) for k=1:m])
+        set_prop!(g, 1, :h, S)
+        set_prop!(g, 2*m, :h, T)
+        for v=2:m
+            out = sorted_outneighbors(g, v)
+            psi = get_prop(g, out[1], :iangle)
+            h = get_prop(g, v-1, :h)
+            h1 = -h-psi
+            set_prop!(g, v, :h, h1)
+        end
+    end
+    for v in vertices(g)
+        out = sorted_outneighbors(g,v)
+        if length(out)>0
+            k = 1
+            if length(out)==2
+                deltau = get_prop(g, v, out[1], :delta)
+                deltav = get_prop(g, v, out[2], :delta)
+                k = tan(deltau/2)*tan(deltav/2)
+            end
+            id = findfirst(x->haskey(props(g,x),:h), out)
+            oid = findfirst(x->!haskey(props(g,x),:h), out)
+            psi = get_prop(g, v, :oangle)
+            if oid!=nothing
+                h2 = get_prop(g, out[id], :h)
+                set_prop!(g, out[oid], :h, -h2-psi)
+            end
+            v12 = opposite_vertex(g, v)
+            if v12!=nothing
+                h = get_prop(g, v, :h)
+                psiR = angle(-(exp(im*psi)*k+1)/(exp(im*psi)+k))
+                set_prop!(g, v12, :h, mod(psiR-h+pi, 2pi))
+            end
+        end
+    end
+end
+
+function sineGordon(h, h1, h12, h2, k)
+    diff = sin(0.5*(h1+h2-h-h12))-k*sin(0.5*(h+h1+h2+h12))
+    return diff < 10^-7
+end
+
+
+function test_setup_h!(g::MetaDiGraph)
+    faces = get_quads(g)
+    test = []
+    for f in faces
+        i, i1, i2, i12 = f
+        h = get_prop(g, i, :h)
+        h1 = get_prop(g, i1, :h)
+        h2 = get_prop(g, i2, :h)
+        h12 = get_prop(g, i12, :h)
+        deltau = get_prop(g, i, i1, :delta)
+        deltav = get_prop(g, i, i2, :delta)
+        k = tan(deltau/2)*tan(deltav/2)
+        push!(test, sineGordon(h, h1, h12, h2, k))
+    end
+    return test
+end
+
+
+function uMatrix0(delta, dh)
+    [cot(delta/2)*exp(im*dh) im;im cot(delta/2)*exp(-im*dh)]
+end
+
+
+function vMatrix0(delta, hij)
+    [1 im*tan(delta/2)*exp(im*hij);
+    im*tan(delta/2)*exp(-im*hij) 1]
+end
+
+
+function setup_lax(g::MetaDiGraph)
+    if !haskey(props(g,1), :gauss)
+        println("You need first to assign a Gauss map to the vertices")
+        return false
+    end
+    m, n = props(g)[:dim]
+    set_eprops!(g, spherical_dist, :gauss, :delta)
+    set_vprops_out!(g, get_angles, :gauss, :oangle)
+    set_vprops_inn!(g, get_angles, :gauss, :iangle)
+    set_eprops!(g, delta, :delta)
+    setup_h!(g)
+    for e in edges(g)
+        s, t = src(e), dst(e)
+        delta = get_prop(g, e, :delta)
+        if get_prop(g, e, :dir)=="left"
+            hij = get_prop(g, s, :h) + get_prop(g, t, :h)
+            lax = vMatrix0(delta, hij)
+            set_prop!(g, e, :lax, lax)
+        else
+            dh = get_prop(g, t, :h) - get_prop(g, s, :h)
+            lax = uMatrix0(delta, dh)
+            set_prop!(g, e, :lax, lax)
+        end
+    end
+end
+
+m = 5
+n = 4
+q = Quaternion([0,0,1])
+c1 = sample_small_circle(q, 0.3, m)
+c2 = sample_small_circle(q, 0.4, m; shift=true)
+gauss = propagate_zigzag(c1, c2, nextN, n)
+
+
+####### plot knet
+g = zigzag(m,n+2)
+set_vprops!(g, gauss, :gauss)
+delta = dataFromGauss(gauss, get_lengths)
+setup_lax(g)
+test = test_setup_h!(g)
+
+print_eprop(g, :lax)
+
+color = zeros(m*(n+2))
+color[1]=-0.2
+knet!(g)
+myplot!(g, color)
+
+
+
 function myplot!(g::MetaDiGraph, color)
     surf = get_vprops(g, :surface)
     verts = qToR3.(surf)
     verts = [verts[i][j] for i=1:length(verts), j=1:3]
     conn = get_triangles(g)
-    conn = get_quads(g)
-    conn = [conn[i][j] for i=1:length(conn), j=1:4]
+    #conn = get_quads(g)
+    conn = [conn[i][j] for i=1:length(conn), j=1:3]
 
     scene = mesh(verts, conn, color=color, shading=false)
     wireframe!(scene[end][1], color = (:black, 0.6), linewidth = 3)
@@ -184,7 +307,11 @@ gauss = build_gauss(great1, great2)
 ###### Plot Amsler
 g = di_grid(m,n)
 set_vprops!(g, gauss, :gauss)
+
+
 knet!(g)
+setup_lax(g)
+
 
 color = zeros(m*n)
 color[1]=-0.2
