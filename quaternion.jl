@@ -1,7 +1,7 @@
 module Quaternions
 
 import Base: convert, zero, show, +, -, /, *, printstyled, promote_rule
-import Base: abs, abs2, inv, conj, real, imag
+import Base: abs, abs2, inv, conj, real, imag, isfinite
 import LinearAlgebra: normalize
 
 export Quaternion, dot, cross, normalize, conj, inv
@@ -55,6 +55,7 @@ abs(z::Quaternion) = sqrt(z.r*z.r + z.i*z.i + z.j*z.j + z.k*z.k)
 abs2(z::Quaternion) = z.r*z.r + z.i*z.i + z.j*z.j + z.k*z.k
 inv(z::Quaternion) = conj(z)/abs2(z)
 
+isfinite(z::Quaternion) = isfinite(abs2(z)) ? true : false
 
 (+)(q::Quaternion, w::Real) =
     Quaternion(q.r + w, q.i, q.j, q.k)

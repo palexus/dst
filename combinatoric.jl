@@ -357,6 +357,20 @@ function set_vprops_inn!(g::MetaDiGraph{T,S}, func::Function, argname, propname)
 end
 
 
+function rem_vprop!(g::MetaDiGraph, name::Symbol)
+    for v in vertices(g)
+        rem_prop!(g, v, name)
+    end
+end
+
+function rem_eprop!(g::MetaDiGraph, name::Symbol)
+    for e in edges(g)
+        rem_prop!(g, e, name)
+    end
+end
+
+
+
 """
     print_vprop(mg::MetaDiGraph{T,S}, name) where {T<:Int, S<:Any}
 
