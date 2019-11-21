@@ -129,15 +129,15 @@ function setup_h!(g::MetaDiGraph)
     set_prop!(g, 2*m, :h, 0)
     #fill lowest layer first with the inner angles
     if get_prop(g, :type)=="zigzag"
-        S = 0.5*sum([(-1)^k*get_prop(g, m+k, :iangle) for k=1:m])
-        T = -0.5*sum([(-1)^k*get_prop(g, k, :oangle) for k=1:m])
+        S = mod(0.5*sum([(-1)^k*get_prop(g, m+k, :iangle) for k=1:m]), 2pi)
+        T = mod(0.5*sum([(-1)^k*get_prop(g, k, :oangle) for k=1:m]), 2pi)
         set_prop!(g, 1, :h, S)
-        set_prop!(g, 2*m, :h, T)
+        set_prop!(g, 2m, :h, T)
         for v=2:m
             out = sorted_outneighbors(g, v)
             psi = get_prop(g, out[1], :iangle)
             h = get_prop(g, v-1, :h)
-            h1 = -h-psi
+            h1 = mod(-h-psi, 2pi)
             set_prop!(g, v, :h, h1)
         end
     end
@@ -155,7 +155,7 @@ function setup_h!(g::MetaDiGraph)
             psi = get_prop(g, v, :oangle)
             if oid!=nothing
                 h2 = get_prop(g, out[id], :h)
-                set_prop!(g, out[oid], :h, -h2-psi)
+                set_prop!(g, out[oid], :h, -psi-h2)
             end
             v12 = opposite_vertex(g, v)
             if v12!=nothing
@@ -216,13 +216,19 @@ function setup_lax(g::MetaDiGraph)
     for e in edges(g)
         s, t = src(e), dst(e)
         delta = get_prop(g, e, :delta)
+        println(e)
+        @show delta
         if get_prop(g, e, :dir)=="left"
             hij = get_prop(g, s, :h) + get_prop(g, t, :h)
             lax = vMatrix0(delta, hij)
+            println("left")
+            @show hij, lax
             set_prop!(g, e, :lax, lax)
         else
             dh = get_prop(g, t, :h) - get_prop(g, s, :h)
             lax = uMatrix0(delta, dh)
+            println("right")
+            @show dh, lax
             set_prop!(g, e, :lax, lax)
         end
     end
@@ -249,7 +255,9 @@ function setup_frame!(g::MetaDiGraph; t=0.0)
                     dlax = get_dlax(g, v, o, t)
                     set_prop!(g, o, :frame, lax*phi)
                     set_prop!(g, o, :dframe, dlax*phi+lax*phit)
+                    @show o, all
                     filter!(el->el≠o, all)
+                    @show o, all
                 end
             end
             inn = inneighbors(g, v)
@@ -280,38 +288,34 @@ function symBobenko(g::MetaDiGraph)
     end
 end
 
-m = 10
-n = 5
-q = Quaternion([0,0,1])
-c1 = sample_small_circle(q, 0.3, m)
-c2 = sample_small_circle(q, 0.4, m; shift=true)
-gauss = propagate_zigzag(c1, c2, nextN, n-2)
-
+function initial_condition_zigzag(m::Int, n::Int)
+    q = Quaternion([0,0,1])
+    c1 = sample_small_circle(q, 0.3, m)
+    c2 = sample_small_circle(q, 0.4, m; shift=true)
+    gauss = propagate_zigzag(c1, c2, nextN, n-2)
+    gauss
+end
 
 ####### plot knet
+m = 8
+n = 5
 g = zigzag(m,n)
+gauss = initial_condition_zigzag(m, n)
 set_vprops!(g, gauss, :gauss)
 
 setup_lax(g)
+@show test_setup_h!(g)
+
 setup_frame!(g)
 symBobenko(g)
 
-test_setup_h!(g)
-print_eprop(g, :delta)
-print_vprop(g, :h)
-U = get_lax(g, 1, 11, 0)
-V = get_lax(g, 1, 20, 0)
-V1 = get_lax(g, 20, 21,0)
-U2 = get_lax(g, 11, 21,0)
-V1*U
-U2*V
-
 myplot!(g)
 
+print_eprop(g, :delta)
+print_vprop(g, :h)
 print_vprop(g, :frame)
 print_eprop(g, :lax)
 
-@show test_setup_h!(g)
 
 function myplot!(g::MetaDiGraph)
     conn = get_triangles(g)

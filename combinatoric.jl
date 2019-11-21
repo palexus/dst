@@ -551,7 +551,7 @@ end
 
 
 function get_lax(g::MetaDiGraph, e::Edge, t::Real)
-    lax = get_prop(g, e, :lax)
+    lax = copy(get_prop(g, e, :lax))
     if get_prop(g, e, :dir)=="right"
         lax[1, 2]*=exp(t)
         lax[2, 1]*=exp(t)
@@ -565,7 +565,7 @@ end
 get_lax(g::MetaDiGraph, v::Int, w::Int, t::Real) = get_lax(g, Edge(v,w), t)
 
 function get_dlax(g::MetaDiGraph, e::Edge, t::Real)
-    lax = get_prop(g, e, :lax)
+    lax = copy(get_prop(g, e, :lax))
     lax[1, 1] = 0.0
     lax[2, 2] = 0.0
     if get_prop(g, e, :dir)=="right"
@@ -640,11 +640,10 @@ function get_triangles(g::MetaDiGraph)::Array{Array{Int, 1}, 1}
     triangles = []
     for v in vertices(g)
         out = outneighbors(g,v)
+        v12 = opposite_vertex(g, v)
+        v12 != nothing || break
         if length(out)==2
             push!(triangles, [v, out[1], out[2]])
-        end
-        v12 = opposite_vertex(g, v)
-        if v12!=nothing
             push!(triangles, [out[1], out[2], v12])
         end
     end
