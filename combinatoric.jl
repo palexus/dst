@@ -67,8 +67,8 @@ of a grid with dimension [d1, d2, ...].
 
 # Examples
 ```julia-repl
-julia> di_grid([5,4])
-{20, 31} directed simple Int64 graph
+julia> g = di_grid(5,4)
+{20, 31} directed Int64 metagraph with Float64 weights defined by :weight (default weight 1.0)
 ```
 """
 function di_grid(dims::AbstractVector{T}) where {T<:Integer}
@@ -96,8 +96,8 @@ of dimension [d1, d2, ...]. The first direction is periodic.
 
 # Examples
 ```julia-repl
-julia> cylinder([5,4])
-{20, 35} directed simple Int64 graph
+julia> g = cylinder(5,4)
+{20, 35} directed Int64 metagraph with Float64 weights defined by :weight (default weight 1.0)
 ```
 """
 function cylinder(dims::AbstractVector{T}) where {T<:Integer}
@@ -129,8 +129,8 @@ discribes the number of "layers" and the first the number of "ground points".
 
 # Examples
 ```julia-repl
-julia> zigzag([7,4])
-{28, 42} directed simple Int64 graph
+julia> g = zigzag(5,4)
+{20, 30} directed Int64 metagraph with Float64 weights defined by :weight (default weight 1.0)
 ```
 """
 function zigzag(dims::AbstractVector{T}; periodic=true) where {T<:Integer}
@@ -169,9 +169,10 @@ end
 
 
 """
-    traversion_tree(graph::SimpleDiGraph{T}) where {T<:Int}
+    traversion_tree(graph::MetaDiGraph{T}) where {T<:Int}
 
-Creates a spanning tree of the given graph.
+Creates a spanning tree of the given graph. (Not true it is just a dump subset,
+need to be fixed)
 
 # Examples
 ```julia-repl
@@ -191,7 +192,7 @@ julia> collect(edges(t))
 
 ```
 """
-function traversion_tree(graph::SimpleDiGraph{T}) where {T<:Int}
+function traversion_tree(graph::MetaDiGraph{T}) where {T<:Int}
     g = SimpleDiGraph(length(vertices(graph)))
     visited = []
     for e in edges(graph)
@@ -222,7 +223,6 @@ function opposite_vertex(g::MetaDiGraph, v::Int)
         try
             right(g, left(g, v))
         catch KeyError
-            println("There is no outer opposite vertex")
         end
     end
 end
@@ -237,9 +237,6 @@ the same index. The property goes under the name propname.
 # Examples
 ```julia-repl
 julia> g = zigzag([5,4])
-{20, 30} directed simple Int64 graph
-
-julia> mg = MetaDiGraph(g)
 {20, 30} directed Int64 metagraph with Float64 weights defined by :weight (default weight 1.0)
 
 julia> myProp = collect(1:20);
@@ -273,9 +270,6 @@ evaluates something which is stored under the name propname.
 # Examples
 ```julia-repl
 julia> g = zigzag([3,2])
-{6, 6} directed simple Int64 graph
-
-julia> mg = MetaDiGraph(g)
 {6, 6} directed Int64 metagraph with Float64 weights defined by :weight (default weight 1.0)
 
 julia> myfunc(x, x1, x2)=x1+x2-x
@@ -305,6 +299,22 @@ function set_vprops!(g::MetaDiGraph{T,S}, func::Function, argname, propname)  wh
             arg = get_prop(g, v, argname)
             arg1 = get_prop(g, w1, argname)
             arg2 = get_prop(g, w2, argname)
+            set_prop!(g, v, propname, func(arg, arg1, arg2))
+        end
+    end
+end
+
+function set_vprops_left!(g::MetaDiGraph{T,S}, func::Function, argname, propname) where {T<:Int, S<:Any}
+    for v in vertices(g)
+        out = outneighbors(g, v)
+        inn = inneighbors(g, v)
+        if length(out)>0 && length(inn)>0
+            inn = inneighbors(g, v)
+            ll = inn[findfirst(x->right(g, x)==v, inn)]
+            ur = left(g, v)
+            arg = get_prop(g, v, argname)
+            arg1 = get_prop(g, ur, argname)
+            arg2 = get_prop(g, ll, argname)
             set_prop!(g, v, propname, func(arg, arg1, arg2))
         end
     end
@@ -355,9 +365,6 @@ Print all vertices and its value of the property name.
 # Examples
 ```julia-repl
 julia> g = zigzag([3,2])
-{6, 6} directed simple Int64 graph
-
-julia> mg = MetaDiGraph(g)
 {6, 6} directed Int64 metagraph with Float64 weights defined by :weight (default weight 1.0)
 
 julia> myfunc(x, x1, x2)=x1+x2-x
@@ -398,9 +405,6 @@ Print all vertices and all its values. They are stored in Dictionaries.
 # Examples
 ```julia-repl
 julia> g = zigzag([3,2])
-{6, 6} directed simple Int64 graph
-
-julia> mg = MetaDiGraph(g)
 {6, 6} directed Int64 metagraph with Float64 weights defined by :weight (default weight 1.0)
 
 julia> myfunc(x, x1, x2)=x1+x2-x
@@ -467,6 +471,16 @@ function sorted_innneighbors(g::MetaDiGraph, v::Int)
 end
 
 
+function set_eprops!(g::MetaDiGraph, func::Function, argname::Symbol, propname::Symbol)
+    for e in edges(g)
+        s, t = src(e), dst(e)
+        arg1 = get_prop(g, s, argname)
+        arg2 = get_prop(g, t, argname)
+        set_prop!(g, e, propname, func(arg1, arg2))
+    end
+end
+
+
 function set_eprops!(g::MetaDiGraph{T,S}, data::AbstractArray, propname;
                      type="none", dim=zeros(2)) where {T<:Int, S<:Any}
     m, n = dim
@@ -488,7 +502,6 @@ function set_eprops!(g::MetaDiGraph{T,S}, data::AbstractArray, propname;
                 set_prop!(g, v, w2, propname, data[v][1])
                 set_prop!(g, v, w1, propname, data[v][2])
             elseif length(out)==1
-                @show v, out
                 if v%m==0
                     set_prop!(g, v, out[1], propname, data[v][1])
                 else
@@ -514,16 +527,6 @@ function set_eprops!(g::MetaDiGraph{T,S}, data::AbstractArray, propname;
     end
 end
 
-function set_eprops!(g::MetaDiGraph, func::Function, argname::Symbol, propname::Symbol)
-    for e in edges(g)
-        s, t = src(e), dst(e)
-        arg1 = get_prop(g, s, argname)
-        arg2 = get_prop(g, t, argname)
-        set_prop!(g, s, :propname, func(arg1, arg2))
-    end
-end
-
-
 
 function print_eprop(g::MetaDiGraph{T,S}, name) where {T<:Int, S<:Any}
     for e in edges(g)
@@ -531,18 +534,51 @@ function print_eprop(g::MetaDiGraph{T,S}, name) where {T<:Int, S<:Any}
     end
 end
 
+
 function print_eprops(mg::MetaDiGraph{T,S}) where {T<:Int, S<:Any}
     for e in edges(mg)
         @show props(mg, e)
     end
 end
 
-function get_eprops(g::MetaDiGraph, name)
+
+function get_eprop(g::MetaDiGraph, name)
     out = []
     for e in edges(g)
         push!(out, get_prop(g, e, name))
     end
 end
+
+
+function get_lax(g::MetaDiGraph, e::Edge, t::Real)
+    lax = get_prop(g, e, :lax)
+    if get_prop(g, e, :dir)=="right"
+        lax[1, 2]*=exp(t)
+        lax[2, 1]*=exp(t)
+    else
+        lax[1, 2]*=exp(-t)
+        lax[2, 1]*=exp(-t)
+    end
+    lax
+end
+
+get_lax(g::MetaDiGraph, v::Int, w::Int, t::Real) = get_lax(g, Edge(v,w), t)
+
+function get_dlax(g::MetaDiGraph, e::Edge, t::Real)
+    lax = get_prop(g, e, :lax)
+    lax[1, 1] = 0.0
+    lax[2, 2] = 0.0
+    if get_prop(g, e, :dir)=="right"
+        lax[1, 2]*=exp(t)
+        lax[2, 1]*=exp(t)
+    else
+        lax[1, 2]*=(-1)*exp(-t)
+        lax[2, 1]*=(-1)*exp(-t)
+    end
+    lax
+end
+
+get_dlax(g::MetaDiGraph, v::Int, w::Int, t::Real)=get_dlax(g, Edge(v,w), t)
 
 function label_boundary!(g::MetaDiGraph)
     set_prop!(g, :boundary, "")
@@ -603,13 +639,13 @@ julia> get_triangles(g)
 function get_triangles(g::MetaDiGraph)::Array{Array{Int, 1}, 1}
     triangles = []
     for v in vertices(g)
-        inn = inneighbors(g,v)
         out = outneighbors(g,v)
         if length(out)==2
             push!(triangles, [v, out[1], out[2]])
         end
-        if length(inn)==2
-            push!(triangles, [v, inn[1], inn[2]])
+        v12 = opposite_vertex(g, v)
+        if v12!=nothing
+            push!(triangles, [out[1], out[2], v12])
         end
     end
     return triangles

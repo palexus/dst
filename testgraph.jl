@@ -1,10 +1,12 @@
 include("combinatoric.jl")
 include("knet_alg.jl")
+using Makie: textslider, lift
 
 
 function nextN(n::Quaternion, n1::Quaternion, n2::Quaternion)::Quaternion
     dot(n, n1 + n2) / (1 + dot(n1, n2)) * (n1 + n2) - n
 end
+
 
 function propagate(
     verlst::Array{Quaternion{T},1},
@@ -30,12 +32,14 @@ function propagate(
     end
 end
 
+
 function build_gauss(
     verlst::Array{Quaternion{T},1},
     horlst::Array{Quaternion{S},1},
 ) where {T<:Real,S<:Real}
     propagate(verlst, horlst, nextN)
 end
+
 
 function nextF(
     n::Quaternion{T},
@@ -44,6 +48,7 @@ function nextF(
 ) where {S,T,U<:Real}
     return f + cross(n, n1)
 end
+
 
 function knet!(g::MetaDiGraph; f0=zero(Quaternion{Float64}))
     set_prop!(g, 1, :surface, f0)
@@ -125,7 +130,7 @@ function setup_h!(g::MetaDiGraph)
     #fill lowest layer first with the inner angles
     if get_prop(g, :type)=="zigzag"
         S = 0.5*sum([(-1)^k*get_prop(g, m+k, :iangle) for k=1:m])
-        T = 0.5*sum([(-1)^k*get_prop(g, k, :oangle) for k=1:m])
+        T = -0.5*sum([(-1)^k*get_prop(g, k, :oangle) for k=1:m])
         set_prop!(g, 1, :h, S)
         set_prop!(g, 2*m, :h, T)
         for v=2:m
@@ -156,11 +161,12 @@ function setup_h!(g::MetaDiGraph)
             if v12!=nothing
                 h = get_prop(g, v, :h)
                 psiR = angle(-(exp(im*psi)*k+1)/(exp(im*psi)+k))
-                set_prop!(g, v12, :h, mod(psiR-h+pi, 2pi))
+                set_prop!(g, v12, :h, psiR-h-pi)
             end
         end
     end
 end
+
 
 function sineGordon(h, h1, h12, h2, k)
     diff = sin(0.5*(h1+h2-h-h12))-k*sin(0.5*(h+h1+h2+h12))
@@ -206,7 +212,6 @@ function setup_lax(g::MetaDiGraph)
     set_eprops!(g, spherical_dist, :gauss, :delta)
     set_vprops_out!(g, get_angles, :gauss, :oangle)
     set_vprops_inn!(g, get_angles, :gauss, :iangle)
-    set_eprops!(g, delta, :delta)
     setup_h!(g)
     for e in edges(g)
         s, t = src(e), dst(e)
@@ -223,40 +228,110 @@ function setup_lax(g::MetaDiGraph)
     end
 end
 
-m = 5
-n = 4
+
+function setup_frame!(g::MetaDiGraph; t=0.0)
+    phi0 = Complex{Float64}[1 0;0 1]
+    n = nv(g)
+    set_prop!(g, 1, :frame, phi0)
+    set_prop!(g, 1, :dframe, zeros(2,2))
+    all = collect(2:n)
+    while !isempty(all)
+        @show all
+        for v in vertices(g)
+            out = outneighbors(g, v)
+            for o in out
+                if o in all
+                    !haskey(props(g, o), :frame) || continue
+                    haskey(props(g, v), :frame) || break
+                    phi = get_prop(g, v, :frame)
+                    phit = get_prop(g, v, :dframe)
+                    lax = get_lax(g, v, o, t)
+                    dlax = get_dlax(g, v, o, t)
+                    set_prop!(g, o, :frame, lax*phi)
+                    set_prop!(g, o, :dframe, dlax*phi+lax*phit)
+                    filter!(el->el≠o, all)
+                end
+            end
+            inn = inneighbors(g, v)
+            for i in inn
+                if i in all
+                    !haskey(props(g, i), :frame) || continue
+                    haskey(props(g, v), :frame) || break
+                    phi = get_prop(g, v, :frame)
+                    phit = get_prop(g, v, :dframe)
+                    lax = get_lax(g, i, v, t)
+                    ilax = inv(lax)
+                    dlax = get_dlax(g, i, v, t)
+                    set_prop!(g, i, :frame, ilax*phi)
+                    set_prop!(g, i, :dframe, ilax*(phit-dlax*ilax*phi))
+                    filter!(el->el≠i, all)
+                end
+            end
+        end
+    end
+end
+
+
+function symBobenko(g::MetaDiGraph)
+    for v in vertices(g)
+        phi = get_prop(g, v, :frame)
+        phit = get_prop(g, v, :dframe)
+        set_prop!(g, v, :surface, 2(inv(phi)*phit))
+    end
+end
+
+m = 10
+n = 5
 q = Quaternion([0,0,1])
 c1 = sample_small_circle(q, 0.3, m)
 c2 = sample_small_circle(q, 0.4, m; shift=true)
-gauss = propagate_zigzag(c1, c2, nextN, n)
+gauss = propagate_zigzag(c1, c2, nextN, n-2)
 
 
 ####### plot knet
-g = zigzag(m,n+2)
+g = zigzag(m,n)
 set_vprops!(g, gauss, :gauss)
-delta = dataFromGauss(gauss, get_lengths)
-setup_lax(g)
-test = test_setup_h!(g)
 
+setup_lax(g)
+setup_frame!(g)
+symBobenko(g)
+
+test_setup_h!(g)
+print_eprop(g, :delta)
+print_vprop(g, :h)
+U = get_lax(g, 1, 11, 0)
+V = get_lax(g, 1, 20, 0)
+V1 = get_lax(g, 20, 21,0)
+U2 = get_lax(g, 11, 21,0)
+V1*U
+U2*V
+
+myplot!(g)
+
+print_vprop(g, :frame)
 print_eprop(g, :lax)
 
-color = zeros(m*(n+2))
-color[1]=-0.2
-knet!(g)
-myplot!(g, color)
+@show test_setup_h!(g)
 
-
-
-function myplot!(g::MetaDiGraph, color)
-    surf = get_vprops(g, :surface)
-    verts = qToR3.(surf)
-    verts = [verts[i][j] for i=1:length(verts), j=1:3]
+function myplot!(g::MetaDiGraph)
     conn = get_triangles(g)
-    #conn = get_quads(g)
     conn = [conn[i][j] for i=1:length(conn), j=1:3]
+    color = zeros(nv(g))
+    color[1]=-0.2
+
+    #sx, h = textslider(-1:0.01:1, "height", start=0.0)
+    #cw = lift(x -> setup_frame!(g, t=x), h)
+
+    #symBobenko(g)
+    surf = get_vprops(g, :surface)
+    verts = matToR3.(surf)
+    verts = [verts[i][j] for i=1:length(verts), j=1:3]
 
     scene = mesh(verts, conn, color=color, shading=false)
     wireframe!(scene[end][1], color = (:black, 0.6), linewidth = 3)
+
+    #sc = lines(cw, showaxis = true, limits = HyperRectangle(Vec3f0(-3), Vec3f0(3)))
+    #final = hbox(sx, sc)
     display(scene)
 end
 

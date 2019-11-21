@@ -6,7 +6,7 @@ import LinearAlgebra: normalize
 
 export Quaternion, dot, cross, normalize, conj, inv
 export abs, abs2, real, imag, proj_i, proj_j, proj_k
-export qToMat, matToQ, qToR3
+export qToMat, matToQ, qToR3, matToR3
 
 # This constructs only Quaternions of the same type, e.g. only Int8 or Float64..
 struct Quaternion{T<:Real} <: Number
@@ -109,6 +109,10 @@ end
 
 function matToQ(m::Array{Complex{T}, 2}) where {T<:Real}
     return Quaternion(m[1,1].re, -m[1,2].im, m[2,1].re, m[2,2].im)
+end
+
+function matToR3(m::Array{Complex{T}, 2}) where {T<:Real}
+    return qToR3(matToQ(m))
 end
 
 # This should only be used for purely imaginary quaternions
