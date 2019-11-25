@@ -81,11 +81,12 @@ end
 ####### plot knet
 m = 7
 n = 3
-g = zigzag(m,n)
+g = zigzag(m,n; periodic=true)
 gauss = initial_condition_zigzag(m, n)
 set_vprops!(g, gauss, :gauss)
 knet!(g)
 test_knet!(g)
+
 
 
 setup_lax(g)

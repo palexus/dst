@@ -1,4 +1,5 @@
 using LightGraphs, MetaGraphs
+import Base: reverse
 
 function nw(i::Int, j::Int, m::Int)
     if j%2 == 0
@@ -76,14 +77,27 @@ function di_grid(dims::AbstractVector{T}) where {T<:Integer}
     for d in dims[2:end]
         g = cartesian_product(path_digraph(d), g)
     end
-    mg = MetaDiGraph(g)
-    set_prop!(mg, :type, "grid")
-    set_prop!(mg, :dim, dims)
+    g = MetaDiGraph(g)
+    set_prop!(g, :type, "grid")
+    set_prop!(g, :periodic, false)
+    set_prop!(g, :dim, dims)
     if length(dims)==2
-        lrlabel = [("left", "right") for v=1:(dims[1]*dims[2])]
-        set_eprops!(mg, lrlabel, :dir)
+        for v in vertices(g)
+            out = outneighbors(g, v)
+            if length(out)==2
+                w1, w2 = sort(out)
+                set_prop!(g, v, w2, :dir, "left")
+                set_prop!(g, v, w1, :dir, "right")
+            elseif length(out)==1
+                if v%dims[1]==0
+                    set_prop!(g, v, out[1], :dir, "left")
+                else
+                    set_prop!(g, v, out[1], :dir, "right")
+                end
+            end
+        end
     end
-    return mg
+    return g
 end
 
 di_grid(m::Int, n::Int) = di_grid([m,n])
@@ -105,103 +119,128 @@ function cylinder(dims::AbstractVector{T}) where {T<:Integer}
     for d in dims[2:end]
         g = cartesian_product(path_digraph(d), g)
     end
-    mg = MetaDiGraph(g)
-    set_prop!(mg, :type, "cylinder")
-    set_prop!(mg, :dim, dims)
+    g = MetaDiGraph(g)
+    set_prop!(g, :type, "cylinder")
+    set_prop!(g, :periodic, true)
+    set_prop!(g, :dim, dims)
     if length(dims)==2
-        lrlabel = [("left", "right") for v=1:(dims[1]*dims[2])]
-        set_eprops!(mg, lrlabel, :dir)
+        for v in vertices(g)
+            out = outneighbors(g, v)
+            if length(out)==2
+                w1, w2 = sort(out)
+                set_prop!(g, v, w2, :dir, "left")
+                set_prop!(g, v, w1, :dir, "right")
+            elseif length(out)==1
+                if v%dims[1]==0
+                    set_prop!(g, v, out[1], :dir, "left")
+                else
+                    set_prop!(g, v, out[1], :dir, "right")
+                end
+            end
+        end
+        set_prop!(g, dims[1]*dims[2], dims[1]*(dims[2]-1)+1, :dir, "right")
     end
-    return mg
+    return g
 end
 
 cylinder(m::Int, n::Int) = cylinder([m,n])
 
 
 """
-    zigzag(dims::AbstractVector{T}; periodic=true) where {T<:Integer}
+    zigzag(dims::AbstractVector{T}; periodic=false) where {T<:Integer}
 
 Creates a directed Metagraph with the combinatorics of a mesh over a zigzag-path.
 One can see it as a grid where the edges are interchanged with the diagonal
-edges. Note that this is implemented only for 2d and is periodic in the first
+edges. Note that this is implemented only for 2d and can be periodic in the first
 direction. One zigzag with 2m points is called zigzag([m, 2]). The second entry
 discribes the number of "layers" and the first the number of "ground points".
 
 # Examples
 ```julia-repl
-julia> g = zigzag(5,4)
+julia> g = zigzag(5,4;periodic=true)
 {20, 30} directed Int64 metagraph with Float64 weights defined by :weight (default weight 1.0)
 ```
 """
-function zigzag(dims::AbstractVector{T}; periodic=true) where {T<:Integer}
-    if !periodic
-        println("only implemented for periodic zigzag")
-        return
-    end
+function zigzag(dims::AbstractVector{T}; periodic=false) where {T<:Integer}
     if length(dims)!=2
         println("This is only implemented for 2d. Feel free to generalize this method...")
         return
     end
     m, n = dims
-    graphs = [SimpleDiGraph{T}(m) for j=1:n]
-    g = graphs[1]
-    for (i,gi) in enumerate(graphs[2:end])
-        g = blockdiag(g, gi)
-        for v in vertices(gi)
-            index = (i-1)*m+v
-            add_edge!(g, index, toIndex(nw(v, i, m)..., m))
-            add_edge!(g, index, toIndex(no(v, i, m)..., m))
+    g = MetaDiGraph(m*n)
+    if periodic
+        for i=1:n-1
+            for v=1:m
+                index = (i-1)*m+v
+                add_edge!(g, index, toIndex(nw(v, i, m)..., m))
+                add_edge!(g, index, toIndex(no(v, i, m)..., m))
+                set_prop!(g, index, toIndex(nw(v, i, m)..., m), :dir, "left")
+                set_prop!(g, index, toIndex(no(v, i, m)..., m), :dir, "right")
+            end
         end
+        set_prop!(g, :periodic, true)
+    else
+        for i=1:n-1
+            for v=1:m
+                index = (i-1)*m+v
+                if i%2==1
+                    if v==1
+                        add_edge!(g, index, toIndex(no(v, i, m)..., m))
+                        set_prop!(g, index, toIndex(no(v, i, m)..., m), :dir, "right")
+                    else
+                        add_edge!(g, index, toIndex(nw(v, i, m)..., m))
+                        add_edge!(g, index, toIndex(no(v, i, m)..., m))
+                        set_prop!(g, index, toIndex(nw(v, i, m)..., m), :dir, "left")
+                        set_prop!(g, index, toIndex(no(v, i, m)..., m), :dir, "right")
+                    end
+                else
+                    if v!=m
+                        add_edge!(g, index, toIndex(nw(v, i, m)..., m))
+                        add_edge!(g, index, toIndex(no(v, i, m)..., m))
+                        set_prop!(g, index, toIndex(nw(v, i, m)..., m), :dir, "left")
+                        set_prop!(g, index, toIndex(no(v, i, m)..., m), :dir, "right")
+                    else
+                        add_edge!(g, index, toIndex(nw(v, i, m)..., m))
+                        set_prop!(g, index, toIndex(nw(v, i, m)..., m), :dir, "left")
+                    end
+                end
+            end
+        end
+        set_prop!(g, :periodic, false)
     end
-    mg = MetaDiGraph(g)
-    set_prop!(mg, :type, "zigzag")
-    set_prop!(mg, :dim, dims)
-    if length(dims)==2
-        lrlabel = [("left", "right") for v=1:(dims[1]*dims[2])]
-        set_eprops!(mg, lrlabel, :dir)
-    end
-    return mg
+    set_prop!(g, :type,"zigzag")
+    set_prop!(g, :dim, dims)
+    return g
 end
 
-function zigzag(m::Int, n::Int)
-    return zigzag([m,n])
+
+function zigzag(m::Int, n::Int; periodic=false)
+    return zigzag([m,n]; periodic=periodic)
 end
 
 
-"""
-    traversion_tree(graph::MetaDiGraph{T}) where {T<:Int}
-
-Creates a spanning tree of the given graph. (Not true it is just a dump subset,
-need to be fixed)
-
-# Examples
-```julia-repl
-julia> g = di_grid([3,2])
-{6, 7} directed simple Int64 graph
-
-julia> t = traversion_tree(g)
-{6, 5} directed simple Int64 graph
-
-julia> collect(edges(t))
-5-element Array{LightGraphs.SimpleGraphs.SimpleEdge{Int64},1}:
- Edge 1 => 2
- Edge 1 => 4
- Edge 2 => 3
- Edge 2 => 5
- Edge 3 => 6
-
-```
-"""
-function traversion_tree(graph::MetaDiGraph{T}) where {T<:Int}
-    g = SimpleDiGraph(length(vertices(graph)))
-    visited = []
-    for e in edges(graph)
-        if !in(dst(e), visited)
-            push!(visited, dst(e))
-            add_edge!(g, e)
-        end
+function SimpleGraph(g::MetaDiGraph)
+    res = SimpleGraph(nv(g))
+    for e in edges(g)
+        add_edge!(res, e)
     end
-    g
+    return res
+end
+
+
+function reverse(g::SimpleDiGraph, e::Edge)
+    rem_edge!(g, src(e), dst(e))
+    add_edge!(g, dst(e), src(e))
+end
+
+
+function trav_tree(g::MetaDiGraph)
+    get_prop(g, :type)=="zigzag" || return bfs_tree(g, 1)
+    tree = bfs_tree(SimpleGraph(g), 1)
+    for e in edges(tree)
+        has_edge(g, e) || reverse(tree, e)
+    end
+    return tree
 end
 
 
@@ -215,6 +254,7 @@ function right(g::MetaDiGraph, v::Int)
     out = sorted_outneighbors(g, v)
     return out[2]
 end
+
 
 function opposite_vertex(g::MetaDiGraph, v::Int)
     try
@@ -304,6 +344,7 @@ function set_vprops!(g::MetaDiGraph{T,S}, func::Function, argname, propname)  wh
     end
 end
 
+
 function set_vprops_left!(g::MetaDiGraph{T,S}, func::Function, argname, propname) where {T<:Int, S<:Any}
     for v in vertices(g)
         out = outneighbors(g, v)
@@ -343,6 +384,7 @@ function set_vprops_out!(g::MetaDiGraph{T,S}, func::Function, argname, propname;
     end
 end
 
+
 function set_vprops_inn!(g::MetaDiGraph{T,S}, func::Function, argname, propname)  where {T<:Int, S<:Any}
     for v in vertices(g)
         inn = inneighbors(g, v)
@@ -363,12 +405,12 @@ function rem_vprop!(g::MetaDiGraph, name::Symbol)
     end
 end
 
+
 function rem_eprop!(g::MetaDiGraph, name::Symbol)
     for e in edges(g)
         rem_prop!(g, e, name)
     end
 end
-
 
 
 """
@@ -458,6 +500,7 @@ function get_vprops(g::MetaDiGraph, propname)
     return out
 end
 
+
 function sorted_outneighbors(g::MetaDiGraph, v::Int)
     out = outneighbors(g,v)
     res = []
@@ -470,6 +513,7 @@ function sorted_outneighbors(g::MetaDiGraph, v::Int)
     end
     return res
 end
+
 
 function sorted_innneighbors(g::MetaDiGraph, v::Int)
     inn = inneighbors(g,v)
@@ -491,53 +535,6 @@ function set_eprops!(g::MetaDiGraph, func::Function, argname::Symbol, propname::
         arg1 = get_prop(g, s, argname)
         arg2 = get_prop(g, t, argname)
         set_prop!(g, e, propname, func(arg1, arg2))
-    end
-end
-
-
-function set_eprops!(g::MetaDiGraph{T,S}, data::AbstractArray, propname;
-                     type="none", dim=zeros(2)) where {T<:Int, S<:Any}
-    m, n = dim
-    try
-        type = get_prop(g, :type)
-        m, n = get_prop(g, :dim)
-    catch KeyError
-        if dim==zeros(2)
-            _, m = sort(outneighbors(g, 1))
-            m-=1
-            n = convert(Int, length(vertices(g))÷m)
-        end
-    end
-    if type=="grid" || type=="none" || type=="cylinder"
-        for v in vertices(g)
-            out = outneighbors(g, v)
-            if length(out)==2
-                w1, w2 = sort(out)
-                set_prop!(g, v, w2, propname, data[v][1])
-                set_prop!(g, v, w1, propname, data[v][2])
-            elseif length(out)==1
-                if v%m==0
-                    set_prop!(g, v, out[1], propname, data[v][1])
-                else
-                    set_prop!(g, v, out[1], propname, data[v][2])
-                end
-            end
-        end
-    elseif type=="zigzag"
-        for v in vertices(g)
-            out = outneighbors(g, v)
-            if length(out)==2
-                w1, w2 = sort(out)
-                mode = (mod(v,m)==1 && (v÷m)%2==0) || (mod(v,m)==0 && (v÷m)%2==0)
-                if mode
-                    set_prop!(g, v, w2, propname, data[v][1])
-                    set_prop!(g, v, w1, propname, data[v][2])
-                else
-                    set_prop!(g, v, w1, propname, data[v][1])
-                    set_prop!(g, v, w2, propname, data[v][2])
-                end
-            end
-        end
     end
 end
 
@@ -576,7 +573,9 @@ function get_lax(g::MetaDiGraph, e::Edge, t::Real)
     lax
 end
 
+
 get_lax(g::MetaDiGraph, v::Int, w::Int, t::Real) = get_lax(g, Edge(v,w), t)
+
 
 function get_dlax(g::MetaDiGraph, e::Edge, t::Real)
     lax = copy(get_prop(g, e, :lax))
@@ -592,7 +591,9 @@ function get_dlax(g::MetaDiGraph, e::Edge, t::Real)
     lax
 end
 
+
 get_dlax(g::MetaDiGraph, v::Int, w::Int, t::Real)=get_dlax(g, Edge(v,w), t)
+
 
 function label_boundary!(g::MetaDiGraph)
     set_prop!(g, :boundary, "")
