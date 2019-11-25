@@ -285,7 +285,8 @@ function symBobenko(g::MetaDiGraph)
     for v in vertices(g)
         phi = get_prop(g, v, :frame)
         phit = get_prop(g, v, :dframe)
-        set_prop!(g, v, :surface, 2(inv(phi)*phit))
+        surf = matToQ(2(inv(phi)*phit))
+        set_prop!(g, v, :surface, surf)
     end
 end
 

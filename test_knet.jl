@@ -3,6 +3,7 @@ include("knet.jl")
 using Makie: textslider, lift, mesh, wireframe!, hbox
 using Test
 
+
 function test_knet!(g::MetaDiGraph)
     for e in edges(g)
         v,w = src(e),dst(e)
@@ -38,6 +39,7 @@ function test_setup_h!(g::MetaDiGraph)
     return test
 end
 
+
 function myplot!(g::MetaDiGraph)
     conn = get_triangles(g)
     conn = [conn[i][j] for i=1:length(conn), j=1:3]
@@ -55,6 +57,7 @@ function myplot!(g::MetaDiGraph)
     wireframe!(scene[end][1], color = (:black, 0.6), linewidth = 3)
     display(scene)
 end
+
 
 function plot_gauss(g::MetaDiGraph)
     conn = get_triangles(g)
@@ -78,40 +81,45 @@ function initial_condition_zigzag(m::Int, n::Int)
     gauss
 end
 
+
 ####### plot knet
-m = 7
-n = 3
-g = zigzag(m,n; periodic=true)
+m = 10
+n = 5
+g = zigzag(m,n, periodic=true)
 gauss = initial_condition_zigzag(m, n)
 set_vprops!(g, gauss, :gauss)
-knet!(g)
-test_knet!(g)
+# knet!(g)
+# test_knet!(g)
+#myplot!(g)
+#plot_gauss(g)
 
 
+print_vprops(g)
 
 setup_lax(g)
 @show test_setup_h!(g)
 
 setup_frame!(g)
 symBobenko(g)
+test_knet!(g)
 
-myplot!(g)
-
-rem_vprop!(g, :surface)
-knet!(g)
 myplot!(g)
 
 plot_gauss(g)
 
 
 ###### Plot Amsler
-m, n = 30, 30
+m, n = 20, 20
 great1, great2 = generate_Amsler(Quaternion([1, 0, 0]),
-                                 Quaternion([0, -1, 0]), m, n)
+                                 Quaternion([-1, 1, 0]), m, n)
 gauss = build_gauss(great1, great2)
 
 gr = di_grid(m,n)
-set_vprops!(g, gauss, :gauss)
+set_vprops!(gr, gauss, :gauss)
 
 knet!(gr)
+test_knet!(gr)
+
 myplot!(gr)
+
+plot_gauss(gr)

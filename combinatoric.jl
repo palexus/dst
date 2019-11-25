@@ -656,7 +656,7 @@ function get_triangles(g::MetaDiGraph)::Array{Array{Int, 1}, 1}
     for v in vertices(g)
         out = outneighbors(g,v)
         v12 = opposite_vertex(g, v)
-        v12 != nothing || break
+        v12 != nothing || continue
         if length(out)==2
             push!(triangles, [v, out[1], out[2]])
             push!(triangles, [out[1], out[2], v12])
