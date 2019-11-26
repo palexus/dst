@@ -1,6 +1,6 @@
 include("combinatoric.jl")
 include("knet.jl")
-using Makie: textslider, lift, mesh, wireframe!, hbox
+using Makie: textslider, lift, mesh, wireframe!, hbox, vbox
 using Test
 
 
@@ -11,20 +11,38 @@ function test_knet!(g::MetaDiGraph)
         f1 = get_prop(g, w, :surface)
         n = get_prop(g, v, :gauss)
         n1 = get_prop(g, w, :gauss)
+        phi = get_prop(g, v, :frame)
+        phi1 = get_prop(g, w, :frame)
+        n = matToQ(-im*inv(phi)*[1 0;0 -1]*phi)
+        n1 = matToQ(-im*inv(phi1)*[1 0;0 -1]*phi1)
         if get_prop(g, e, :dir)=="left"
-            diff = f1-f-cross(n,n1)
+            diff = imag(f1-f)-cross(n,n1)
+            @show e
             @test zero(Quaternion) ≈ diff atol=10^-7
         else
-            diff = f1-f-cross(n1,n)
+            @show e
+            diff = imag(f1-f)-cross(n1,n)
             @test zero(Quaternion) ≈ diff atol=10^-7
         end
+    end
+end
+
+function test_setup_lax!(g::MetaDiGraph)
+    for v in vertices(g)
+        out = outneighbors(g, v)
+        v12 = opposite_vertex(g, v)
+        U = get_prop(g, v, out[1], :lax)
+        V1 = get_prop(g, out[1], v12, :lax)
+        V = get_prop(g, v, out[2], :lax)
+        U2 = get_prop(g, out[2], v12, :lax)
+        @show v
+        @test V1*U-U2*V ≈ zeros(2,2) atol=10^-7
     end
 end
 
 
 function test_setup_h!(g::MetaDiGraph)
     faces = get_quads(g)
-    test = []
     for f in faces
         i, i1, i2, i12 = sort(f)
         h = get_prop(g, i, :h)
@@ -34,9 +52,8 @@ function test_setup_h!(g::MetaDiGraph)
         deltau = get_prop(g, i, i1, :delta)
         deltav = get_prop(g, i, i2, :delta)
         k = tan(deltau/2)*tan(deltav/2)
-        push!(test, sineGordon(h, h1, h12, h2, k))
+        @test sineGordon(h, h1, h12, h2, k)
     end
-    return test
 end
 
 
@@ -46,18 +63,40 @@ function myplot!(g::MetaDiGraph)
     color = zeros(nv(g))
     color[1]=-0.2
     surf = get_vprops(g, :surface)
-    verts = []
-    if typeof(get_prop(g, 1, :surface))==Matrix{Complex{Float64}}
-        verts = matToR3.(surf)
-    else
-        verts = qToR3.(surf)
-    end
+    verts = qToR3.(surf)
     verts = [verts[i][j] for i=1:length(verts), j=1:3]
     scene = mesh(verts, conn, color=color, shading=false)
     wireframe!(scene[end][1], color = (:black, 0.6), linewidth = 3)
     display(scene)
 end
 
+function my_plot!(g::MetaDiGraph)
+    conn = get_triangles(g)
+    conn = [conn[i][j] for i=1:length(conn), j=1:3]
+    color = zeros(nv(g))
+    color[1]=-0.2
+    surf = get_vprops(g, :surface)
+    verts = qToR3.(surf)
+    verts = [verts[i][j] for i=1:length(verts), j=1:3]
+    initialgauss = get_vprops(g, :gauss)
+    nverts = qToR3.(initialgauss)
+    nverts = [nverts[i][j] for i=1:length(nverts), j=1:3]
+    actualgauss = []
+    for v in vertices(g)
+        phi = get_prop(g, v, :frame)
+        push!(actualgauss, -im*inv(phi)*[1 0;0 -1]*phi)
+    end
+    sverts = matToR3.(actualgauss)
+    sverts = [sverts[i][j] for i=1:length(sverts), j=1:3]
+
+    scene1 = mesh(verts, conn, color=color, shading=false)
+    wireframe!(scene1[end][1], color = (:black, 0.6), linewidth = 3)
+    scene2 = mesh(nverts, conn, color=color, shading=false)
+    wireframe!(scene2[end][1], color = (:black, 0.6), linewidth = 3)
+    scene3 = mesh(sverts, conn, color=color, shading=false)
+    wireframe!(scene3[end][1], color = (:black, 0.6), linewidth = 3)
+    display(hbox(scene1, vbox(scene2, scene3)))
+end
 
 function plot_gauss(g::MetaDiGraph)
     conn = get_triangles(g)
@@ -75,8 +114,8 @@ end
 
 function initial_condition_zigzag(m::Int, n::Int)
     q = Quaternion([0,0,1])
-    c1 = sample_small_circle(q, 0.3, m)
-    c2 = sample_small_circle(q, 0.4, m; shift=true)
+    c1 = sample_small_circle(q, 0.15, m)
+    c2 = sample_small_circle(q, 0.1, m; shift=true)
     gauss = propagate_zigzag(c1, c2, nextN, n-2)
     gauss
 end
@@ -84,7 +123,7 @@ end
 
 ####### plot knet
 m = 10
-n = 5
+n = 15
 g = zigzag(m,n, periodic=true)
 gauss = initial_condition_zigzag(m, n)
 set_vprops!(g, gauss, :gauss)
@@ -93,31 +132,34 @@ set_vprops!(g, gauss, :gauss)
 #myplot!(g)
 #plot_gauss(g)
 
+setup_lax!(g)
+test_setup_h!(g)
 
-print_vprops(g)
-
-setup_lax(g)
-@show test_setup_h!(g)
+print_vprop(g, :h)
 
 setup_frame!(g)
+
 symBobenko(g)
 test_knet!(g)
 
 myplot!(g)
-
-plot_gauss(g)
+my_plot!(g)
 
 
 ###### Plot Amsler
 m, n = 20, 20
 great1, great2 = generate_Amsler(Quaternion([1, 0, 0]),
-                                 Quaternion([-1, 1, 0]), m, n)
+                                 Quaternion([0, 1, 0]), m, n)
 gauss = build_gauss(great1, great2)
 
 gr = di_grid(m,n)
 set_vprops!(gr, gauss, :gauss)
 
 knet!(gr)
+
+setup_lax!(gr)
+
+
 test_knet!(gr)
 
 myplot!(gr)

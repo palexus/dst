@@ -1,5 +1,6 @@
 using LightGraphs, MetaGraphs
-import Base: reverse
+import Base: reverse, iterate
+
 
 function nw(i::Int, j::Int, m::Int)
     if j%2 == 0
@@ -219,7 +220,7 @@ function zigzag(m::Int, n::Int; periodic=false)
 end
 
 
-function SimpleGraph(g::MetaDiGraph)
+function toSimpleGraph(g::MetaDiGraph)
     res = SimpleGraph(nv(g))
     for e in edges(g)
         add_edge!(res, e)
@@ -236,11 +237,50 @@ end
 
 function trav_tree(g::MetaDiGraph)
     get_prop(g, :type)=="zigzag" || return bfs_tree(g, 1)
-    tree = bfs_tree(SimpleGraph(g), 1)
-    for e in edges(tree)
-        has_edge(g, e) || reverse(tree, e)
-    end
+    tree = bfs_tree(toSimpleGraph(g), 1)
     return tree
+end
+
+mutable struct status
+    location::Int
+    visited::Array
+    waiting::Array
+end
+
+struct treeIter
+    g::SimpleDiGraph
+    state::status
+end
+
+treeIter(g::SimpleDiGraph) = treeIter(g, status(1, [1], []))
+
+@inline function Base.iterate(tree::treeIter, state=status(1, [1],[]))
+    src = state.location
+    visited = state.visited
+    waiting = state.waiting
+    if visited==vertices(tree.g)
+        return nothing
+    end
+    out = copy(outneighbors(tree.g, src))
+    @inbounds while !isempty(out)
+        o = pop!(out)
+        if !(o in visited)
+            state.location=o
+            push!(state.visited, o)
+            state.waiting = vcat(waiting, collect(zip(src*ones(Int,length(out)),out)))
+            return (src, state.location), state
+        end
+    end
+    @inbounds while !isempty(waiting)
+        s, w = pop!(waiting)
+        if !(w in visited)
+            state.location=w
+            push!(state.visited, w)
+            return (s, state.location) , state
+        end
+    end
+    sort!(visited)
+    return nothing
 end
 
 

@@ -153,7 +153,7 @@ function setup_h!(g::MetaDiGraph)
         set_prop!(g, 2m, :h, T)
         for v=2:m
             out = sorted_outneighbors(g, v)
-            phi = mod(get_prop(g, out[1], :iangle)-pi, 2pi)
+            phi = get_prop(g, out[1], :iangle)-pi
             h = get_prop(g, v-1, :h)
             h1 = -h-phi+pi
             set_prop!(g, v, :h, h1)
@@ -167,7 +167,7 @@ function setup_h!(g::MetaDiGraph)
             k = tan(deltau/2)*tan(deltav/2)
             id = findfirst(x->haskey(props(g,x),:h), out)
             oid = findfirst(x->!haskey(props(g,x),:h), out)
-            phi = mod(get_prop(g, v, :oangle)-pi, 2pi)
+            phi = get_prop(g, v, :oangle)-pi
             if oid!=nothing
                 h2 = get_prop(g, out[id], :h)
                 set_prop!(g, out[oid], :h, -phi-h2+pi)
@@ -178,14 +178,9 @@ function setup_h!(g::MetaDiGraph)
                 h1 = get_prop(g, out[1], :h)
                 h2 = get_prop(g, out[2], :h)
                 #phiR = angle((1-exp(im*phi)*k)/(k-exp(im*phi)))
-                phiR = mod(pi+2*angle(1-k*exp(im*phi)),2pi)-phi
+                phiR = pi+2*angle(1-k*exp(im*phi))-phi
                 h12 = phiR-h
-                for i=-2:2
-                    if sineGordon(h, h1, h12+i*pi, h2, k)
-                        set_prop!(g, v12, :h, h12+i*pi)
-                        break
-                    end
-                end
+                set_prop!(g, v12, :h, h12)
             end
         end
     end
@@ -209,7 +204,7 @@ function vMatrix0(delta, hij)
 end
 
 
-function setup_lax(g::MetaDiGraph)
+function setup_lax!(g::MetaDiGraph)
     if !haskey(props(g,1), :gauss)
         println("You need first to assign a Gauss map to the vertices")
         return false
@@ -236,46 +231,27 @@ end
 
 
 function setup_frame!(g::MetaDiGraph; t=0.0)
-    if haskey(props(g, 1), :frame)
-        rem_vprop!(g, :frame)
-        rem_vprop!(g, :dframe)
-    end
     phi0 = Complex{Float64}[1 0;0 1]
-    n = nv(g)
     set_prop!(g, 1, :frame, phi0)
     set_prop!(g, 1, :dframe, zeros(2,2))
-    all = collect(2:n)
-    while !isempty(all)
-        for v in vertices(g)
-            out = outneighbors(g, v)
-            for o in out
-                if o in all
-                    !haskey(props(g, o), :frame) || continue
-                    haskey(props(g, v), :frame) || break
-                    phi = get_prop(g, v, :frame)
-                    phit = get_prop(g, v, :dframe)
-                    lax = get_lax(g, v, o, t)
-                    dlax = get_dlax(g, v, o, t)
-                    set_prop!(g, o, :frame, lax*phi)
-                    set_prop!(g, o, :dframe, dlax*phi+lax*phit)
-                    filter!(el->el≠o, all)
-                end
-            end
-            inn = inneighbors(g, v)
-            for i in inn
-                if i in all
-                    !haskey(props(g, i), :frame) || continue
-                    haskey(props(g, v), :frame) || break
-                    phi = get_prop(g, v, :frame)
-                    phit = get_prop(g, v, :dframe)
-                    lax = get_lax(g, i, v, t)
-                    ilax = inv(lax)
-                    dlax = get_dlax(g, i, v, t)
-                    set_prop!(g, i, :frame, ilax*phi)
-                    set_prop!(g, i, :dframe, ilax*(phit-dlax*ilax*phi))
-                    filter!(el->el≠i, all)
-                end
-            end
+    trav = treeIter(trav_tree(g))
+    for tup in trav
+        src, dst = tup
+        e = Edge(src, dst)
+        phi = get_prop(g, src, :frame)
+        phit = get_prop(g, src, :dframe)
+        if e in edges(g)
+            lax = get_lax(g, e, t)
+            dlax = get_dlax(g, e, t)
+            set_prop!(g, dst, :frame, lax*phi)
+            set_prop!(g, dst, :dframe, dlax*phi+lax*phit)
+        else
+            lax = get_lax(g, reverse(e), t)
+            dlax = get_dlax(g, reverse(e), t)
+            ilax = inv(lax)
+            phi1 = ilax*phi
+            set_prop!(g, dst, :frame, phi1)
+            set_prop!(g, dst, :dframe, ilax*(phit-dlax*phi1))
         end
     end
 end
@@ -289,8 +265,6 @@ function symBobenko(g::MetaDiGraph)
         set_prop!(g, v, :surface, surf)
     end
 end
-
-
 
 ###### Initial conditions for Amsler
 function generate_Amsler(
@@ -317,5 +291,6 @@ function get_angles(
     n::Quaternion, n1::Quaternion, n2::Quaternion)::Float64
     edge1 = normalize(n1-n)
     edge2 = normalize(n2-n)
-    asin(abs(cross(edge1, edge2)))
+    #asin(abs(cross(edge1, edge2)))
+    acos(dot(edge1, edge2))
 end
