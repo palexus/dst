@@ -101,41 +101,26 @@ end
 
 function knet!(g::MetaDiGraph; f0=zero(Quaternion{Float64}))
     set_prop!(g, 1, :surface, f0)
-    for v in vertices(g)
-        try
-            out = outneighbors(g, v)
-            if haskey(props(g, v), :surface)
-                for w in out
-                    if get_prop(g, v, w, :dir)=="right" && !haskey(props(g, w), :surface)
-                        f = get_prop(g, v, :surface)
-                        n = get_prop(g, v, :gauss)
-                        n1 = get_prop(g, w, :gauss)
-                        f1 = nextF(n1, n, f)
-                        set_prop!(g, w, :surface, f1)
-                    elseif get_prop(g, v, w, :dir)=="left" && !haskey(props(g, w), :surface)
-                        f = get_prop(g, v, :surface)
-                        n = get_prop(g, v, :gauss)
-                        n1 = get_prop(g, w, :gauss)
-                        f1 = nextF(n, n1, f)
-                        set_prop!(g, w, :surface, f1)
-                    end
-                end
+    trav = treeIter(trav_tree(g))
+    for tup in trav
+        src, dst = tup
+        e = Edge(src, dst)
+        f = get_prop(g, src, :surface)
+        n = get_prop(g, src, :gauss)
+        n1 = get_prop(g, dst, :gauss)
+        if e in edges(g)
+            if get_prop(g, e, :dir)=="right"
+                set_prop!(g, dst, :surface, nextF(n1, n, f))
             else
-                w = out[findfirst(x->haskey(props(g, x), :surface), out)]
-                f2 = get_prop(g, w, :surface)
-                n2 = get_prop(g, w, :gauss)
-                n = get_prop(g, v, :gauss)
-                f = get_prop(g, v, w, :dir)=="left" ? nextF(n2, n, f2) : nextF(n,n2,f2)
-                set_prop!(g, v, :surface, f)
-                id = findfirst(x->!haskey(props(g, x), :surface), out)
-                if id!=nothing
-                    n1 = get_prop(g, out[id], :gauss)
-                    f1 = nextF(n1, n, f)
-                    set_prop!(g, out[id], :surface, f1)
-                end
+                set_prop!(g, dst, :surface, nextF(n, n1, f))
             end
-        catch KeyError
-            println("There is probably no gauss map")
+        else
+            e = reverse(e)
+            if get_prop(g, e, :dir)=="right"
+                set_prop!(g, dst, :surface, nextF(n1, n, f))
+            else
+                set_prop!(g, dst, :surface, nextF(n, n1, f))
+            end
         end
     end
 end

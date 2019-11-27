@@ -11,10 +11,10 @@ function test_knet!(g::MetaDiGraph)
         f1 = get_prop(g, w, :surface)
         n = get_prop(g, v, :gauss)
         n1 = get_prop(g, w, :gauss)
-        phi = get_prop(g, v, :frame)
-        phi1 = get_prop(g, w, :frame)
-        n = matToQ(-im*inv(phi)*[1 0;0 -1]*phi)
-        n1 = matToQ(-im*inv(phi1)*[1 0;0 -1]*phi1)
+        #phi = get_prop(g, v, :frame)
+        #phi1 = get_prop(g, w, :frame)
+        #n = matToQ(-im*inv(phi)*[1 0;0 -1]*phi)
+        #n1 = matToQ(-im*inv(phi1)*[1 0;0 -1]*phi1)
         if get_prop(g, e, :dir)=="left"
             diff = imag(f1-f)-cross(n,n1)
             @show e
@@ -52,7 +52,14 @@ function test_setup_h!(g::MetaDiGraph)
         deltau = get_prop(g, i, i1, :delta)
         deltav = get_prop(g, i, i2, :delta)
         k = tan(deltau/2)*tan(deltav/2)
-        @test sineGordon(h, h1, h12, h2, k)
+        try
+            @test sineGordon(h, h1, h12, h2, k)
+        catch TestSetException
+            println("Test failed at the face")
+            @show f
+            @show h, h1, h2, h12, k
+            println(sin(0.5*(h1+h2-h-h12))-k*sin(0.5*(h+h1+h2+h12)))
+        end
     end
 end
 
@@ -123,31 +130,48 @@ end
 
 ####### plot knet
 m = 10
-n = 15
+n = 10
 g = zigzag(m,n, periodic=true)
 gauss = initial_condition_zigzag(m, n)
 set_vprops!(g, gauss, :gauss)
-# knet!(g)
-# test_knet!(g)
+#knet!(g)
+#test_knet!(g)
 #myplot!(g)
 #plot_gauss(g)
 
 setup_lax!(g)
-test_setup_h!(g)
 
-print_vprop(g, :h)
+Umat, Vmat = [],[]
+for e in edges(g)
+    if get_prop(g, e, :dir)=="left"
+        V = get_prop(g, e, :lax)
+        push!(Vmat, V)
+    else
+        U = get_prop(g, e, :lax)
+        push!(Umat, U)
+    end
+end
+Umat = reshape(Umat, (m,n-1))
+Vmat = reshape(Vmat, (m,n-1))
+println("-------------------")
+@show Vmat[:,end]
+
+
+
+test_setup_h!(g)
 
 setup_frame!(g)
 
 symBobenko(g)
-test_knet!(g)
+#test_knet!(g)
+
 
 myplot!(g)
 my_plot!(g)
 
 
 ###### Plot Amsler
-m, n = 20, 20
+m, n = 20, 25
 great1, great2 = generate_Amsler(Quaternion([1, 0, 0]),
                                  Quaternion([0, 1, 0]), m, n)
 gauss = build_gauss(great1, great2)
@@ -155,9 +179,11 @@ gauss = build_gauss(great1, great2)
 gr = di_grid(m,n)
 set_vprops!(gr, gauss, :gauss)
 
-knet!(gr)
+knet2!(gr)
 
 setup_lax!(gr)
+
+
 
 
 test_knet!(gr)
