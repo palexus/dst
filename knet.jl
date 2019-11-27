@@ -126,6 +126,68 @@ function knet!(g::MetaDiGraph; f0=zero(Quaternion{Float64}))
 end
 
 
+function h_on_first_row!(g::MetaDiGraph)
+    m, n = get_prop(g, :dim)
+    S = 0.5*sum([(-1)^k*get_prop(g, m+k, :iangle) for k=1:m])
+    T = 0.5*sum([(-1)^k*get_prop(g, k, :oangle) for k=1:m])
+    set_prop!(g, 1, :h, exp(im*S))
+    set_prop!(g, m+1, :h, exp(im*T))
+    for v=2:m
+        out = sorted_outneighbors(g, v)
+        Q = exp(im*get_prop(g, out[1], :iangle))
+        H = get_prop(g, v-1, :h)
+        H1 = Q/H
+        set_prop!(g, v, :h, H1)
+    end
+end
+
+
+function setup_h2!(g::MetaDiGraph)
+    m, n = get_prop(g, :dim)
+    set_prop!(g, 1, :h, 0)
+    set_prop!(g, m+1, :h, 0)
+    if get_prop(g, :type)=="zigzag"
+        h_on_first_row!(g)
+    end
+    for v in vertices(g)
+        v1 = right(g, v)
+        v2 = left(g, v)
+        v12 = opposite_vertex(g, v)
+        if v1!=nothing && v2!=nothing
+            Q = exp(im*get_prop(g, v, :oangle))
+            if haskey(props(g,v1),:h) && !haskey(props(g,v2),:h)
+                H1 = get_prop(g, v1, :h)
+                H2 = Q/H1
+                set_prop!(g, v2, :h, H2)
+            elseif haskey(props(g,v2),:h) && !haskey(props(g,v1),:h)
+                H2 = get_prop(g, v2, :h)
+                H1 = Q/H2
+                set_prop!(g, v1, :h, H1)
+            end
+        end
+        if v12!=nothing
+            Q = exp(im*get_prop(g, v, :oangle))
+            H = get_prop(g, v, :h)
+            if v1!=nothing
+                deltau = get_prop(g, v, v1, :delta)
+                deltav = get_prop(g, v1, v12, :delta)
+                k = tan(deltau/2)*tan(deltav/2)
+                R = -(k*Q+1)/(Q+k)
+                H12 = -1/H/R
+                set_prop!(g, v12, :h, H12)
+            elseif v2!=nothing
+                deltav = get_prop(g, v, v2, :delta)
+                deltau = get_prop(g, v2, v12, :delta)
+                k = tan(deltau/2)*tan(deltav/2)
+                R = -(k*Q+1)/(Q+k)
+                H12 = -1/H/R
+                set_prop!(g, v12, :h, H12)
+            end
+        end
+    end
+end
+
+
 function setup_h!(g::MetaDiGraph)
     m, n = get_prop(g, :dim)
     set_prop!(g, 1, :h, 0)
@@ -138,9 +200,9 @@ function setup_h!(g::MetaDiGraph)
         set_prop!(g, 2m, :h, T)
         for v=2:m
             out = sorted_outneighbors(g, v)
-            phi = get_prop(g, out[1], :iangle)-pi
+            psi = get_prop(g, out[1], :iangle)
             h = get_prop(g, v-1, :h)
-            h1 = -h-phi+pi
+            h1 = -h-psi
             set_prop!(g, v, :h, h1)
         end
     end
@@ -152,10 +214,10 @@ function setup_h!(g::MetaDiGraph)
             k = tan(deltau/2)*tan(deltav/2)
             id = findfirst(x->haskey(props(g,x),:h), out)
             oid = findfirst(x->!haskey(props(g,x),:h), out)
-            phi = get_prop(g, v, :oangle)-pi
+            psi = get_prop(g, v, :oangle)
             if oid!=nothing
                 h2 = get_prop(g, out[id], :h)
-                set_prop!(g, out[oid], :h, -phi-h2+pi)
+                set_prop!(g, out[oid], :h, -psi-h2)
             end
             v12 = opposite_vertex(g, v)
             if v12!=nothing
@@ -163,8 +225,8 @@ function setup_h!(g::MetaDiGraph)
                 h1 = get_prop(g, out[1], :h)
                 h2 = get_prop(g, out[2], :h)
                 #phiR = angle((1-exp(im*phi)*k)/(k-exp(im*phi)))
-                phiR = pi+2*angle(1-k*exp(im*phi))-phi
-                h12 = phiR-h
+                psiR = angle(-(k*exp(im*psi)+1)/(exp(im*psi)+k))
+                h12 = psiR-h-pi
                 set_prop!(g, v12, :h, h12)
             end
         end
@@ -178,14 +240,14 @@ function sineGordon(h, h1, h12, h2, k)
 end
 
 
-function uMatrix0(delta, dh)
-    [cot(delta/2)*exp(im*dh) im;im cot(delta/2)*exp(-im*dh)]
+function uMatrix0(delta, dH)
+    [cot(delta/2)*dH im;im cot(delta/2)/dH]
 end
 
 
-function vMatrix0(delta, hij)
-    [1 im*tan(delta/2)*exp(im*hij);
-    im*tan(delta/2)*exp(-im*hij) 1]
+function vMatrix0(delta, Hij)
+    [1 im*tan(delta/2)*Hij;
+    im*tan(delta/2)/Hij 1]
 end
 
 
@@ -198,16 +260,18 @@ function setup_lax!(g::MetaDiGraph)
     set_eprops!(g, spherical_dist, :gauss, :delta)
     set_vprops_out!(g, get_angles, :gauss, :oangle)
     set_vprops_inn!(g, get_angles, :gauss, :iangle)
-    setup_h!(g)
+    set_vprops_left!(g, get_angles, :gauss, :langle)
+    set_vprops_right!(g, get_angles, :gauss, :rangle)
+    setup_h2!(g)
     for e in edges(g)
         s, t = src(e), dst(e)
         delta = get_prop(g, e, :delta)
         if get_prop(g, e, :dir)=="left"
-            hij = get_prop(g, s, :h) + get_prop(g, t, :h)
+            hij = get_prop(g, s, :h)*get_prop(g, t, :h)
             lax = vMatrix0(delta, hij)
             set_prop!(g, e, :lax, lax)
         else
-            dh = get_prop(g, t, :h) - get_prop(g, s, :h)
+            dh = get_prop(g, t, :h)/get_prop(g, s, :h)
             lax = uMatrix0(delta, dh)
             set_prop!(g, e, :lax, lax)
         end

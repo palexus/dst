@@ -129,7 +129,7 @@ end
 
 
 ####### plot knet
-m = 10
+m = 11
 n = 10
 g = zigzag(m,n, periodic=true)
 gauss = initial_condition_zigzag(m, n)
@@ -140,24 +140,7 @@ set_vprops!(g, gauss, :gauss)
 #plot_gauss(g)
 
 setup_lax!(g)
-
-Umat, Vmat = [],[]
-for e in edges(g)
-    if get_prop(g, e, :dir)=="left"
-        V = get_prop(g, e, :lax)
-        push!(Vmat, V)
-    else
-        U = get_prop(g, e, :lax)
-        push!(Umat, U)
-    end
-end
-Umat = reshape(Umat, (m,n-1))
-Vmat = reshape(Vmat, (m,n-1))
-println("-------------------")
-@show Vmat[:,end]
-
-
-
+println("---------------------------")
 test_setup_h!(g)
 
 setup_frame!(g)
@@ -165,13 +148,29 @@ setup_frame!(g)
 symBobenko(g)
 #test_knet!(g)
 
-
 myplot!(g)
 my_plot!(g)
 
 
+psi1 = get_prop(g, 11, :oangle)
+psi2 = get_prop(g, 11, :langle)
+psi3 = get_prop(g, 11, :iangle)
+psi4 = get_prop(g, 11, :rangle)
+
+psi1+psi2+psi3+psi4
+
+
+
+
+
+
+
+
+
+
+
 ###### Plot Amsler
-m, n = 20, 25
+m, n = 20, 20
 great1, great2 = generate_Amsler(Quaternion([1, 0, 0]),
                                  Quaternion([0, 1, 0]), m, n)
 gauss = build_gauss(great1, great2)
@@ -179,15 +178,37 @@ gauss = build_gauss(great1, great2)
 gr = di_grid(m,n)
 set_vprops!(gr, gauss, :gauss)
 
-knet2!(gr)
-
+#knet2!(gr)
 setup_lax!(gr)
-
-
-
-
-test_knet!(gr)
-
+setup_frame!(gr)
+symBobenko(gr)
 myplot!(gr)
 
-plot_gauss(gr)
+
+out = outneighbors(gr, 24)
+phiU1 = get_prop(gr, 34, :oangle)
+phiU2 = get_prop(gr, 34, :langle)
+phiU3 = get_prop(gr, 34, :iangle)
+phiU4 = get_prop(gr, 34, :rangle)
+
+phiU1+phiU2+phiU3+phiU4
+2pi
+
+phiU = get_prop(gr, 14, :oangle)
+phiL = get_prop(gr, 15, :langle)
+phiR = get_prop(gr, 34, :rangle)
+phiD = get_prop(gr, 35, :iangle)
+
+deltau = get_prop(gr, 14, 15, :delta)
+deltav = get_prop(gr, 14, 34, :delta)
+k = tan(deltau/2)*tan(deltav/2)
+
+phiR2 = angle(-(k*exp(im*(phiU))+1)/(exp(im*(phiU))+k))
+phi = angle(-(k*exp(im*(phiR2))+1)/(exp(im*(phiR2))+k))
+
+
+
+geogr=di_grid(m,n)
+set_vprops!(geogr, gauss, :gauss)
+knet!(geogr)
+myplot!(geogr)
