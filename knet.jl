@@ -2,6 +2,7 @@ include("combinatoric.jl")
 include("quaternion.jl")
 
 using .Quaternions
+using LinearAlgebra: det
 
 function nextN(n::Quaternion, n1::Quaternion, n2::Quaternion)::Quaternion
     dot(n, n1 + n2) / (1 + dot(n1, n2)) * (n1 + n2) - n
@@ -128,8 +129,11 @@ end
 
 function h_on_first_row!(g::MetaDiGraph)
     m, n = get_prop(g, :dim)
-    S = 0.5*sum([-(-1)^k*get_prop(g, m+k, :iangle) for k=1:m])
-    T = 0.5*sum([-(-1)^k*get_prop(g, k, :oangle) for k=1:m])
+    S, T = 0, 0
+    if get_prop(g, :periodic)==true
+        S = 0.5*sum([-(-1)^k*get_prop(g, m+k, :iangle) for k=1:m])
+        T = 0.5*sum([-(-1)^k*get_prop(g, k, :oangle) for k=1:m])
+    end
     set_prop!(g, 1, :h, exp(im*S))
     set_prop!(g, m+1, :h, exp(im*T))
     for v=2:m
@@ -143,12 +147,6 @@ end
 
 
 function setup_h2!(g::MetaDiGraph)
-    m, n = get_prop(g, :dim)
-    set_prop!(g, 1, :h, 1)
-    set_prop!(g, m+1, :h, 1)
-    if get_prop(g, :type)=="zigzag"
-        h_on_first_row!(g)
-    end
     for v in vertices(g)
         v1 = right(g, v)
         v2 = left(g, v)
@@ -166,8 +164,12 @@ function setup_h2!(g::MetaDiGraph)
             end
         end
         if v12!=nothing
-            Q = exp(im*get_prop(g, v, :oangle))
-            H = get_prop(g, v, :h)
+            try
+                Q = exp(im*get_prop(g, v, :oangle))
+                H = get_prop(g, v, :h)
+            catch KeyError
+                continue
+            end
             if v1!=nothing
                 deltau = get_prop(g, v, v1, :delta)
                 deltav = get_prop(g, v1, v12, :delta)
@@ -192,55 +194,16 @@ end
 
 function setup_h!(g::MetaDiGraph)
     m, n = get_prop(g, :dim)
-    set_prop!(g, 1, :h, 0)
-    set_prop!(g, 2*m, :h, 0)
-    #fill lowest layer first with the inner angles
+    set_eprops!(g, spherical_dist, :gauss, :delta)
+    set_vprops_out!(g, get_angles, :gauss, :oangle)
+    set_prop!(g, 1, :h, 1)
+    set_prop!(g, m+1, :h, 1)
     if get_prop(g, :type)=="zigzag"
-        S = 0.5*sum([(-1)^k*get_prop(g, m+k, :iangle) for k=1:m])
-        T = 0.5*sum([(-1)^k*get_prop(g, k, :oangle) for k=1:m])
-        set_prop!(g, 1, :h, S)
-        set_prop!(g, 2m, :h, T)
-        for v=2:m
-            out = sorted_outneighbors(g, v)
-            psi = get_prop(g, out[1], :iangle)
-            h = get_prop(g, v-1, :h)
-            h1 = -h-psi
-            set_prop!(g, v, :h, h1)
-        end
+        set_vprops_inn!(g, get_angles, :gauss, :iangle)
+        h_on_first_row!(g)
     end
-    for v in vertices(g)
-        out = sorted_outneighbors(g,v)
-        if length(out)>0
-            deltau = get_prop(g, v, out[1], :delta)
-            deltav = get_prop(g, v, out[2], :delta)
-            k = tan(deltau/2)*tan(deltav/2)
-            id = findfirst(x->haskey(props(g,x),:h), out)
-            oid = findfirst(x->!haskey(props(g,x),:h), out)
-            psi = get_prop(g, v, :oangle)
-            if oid!=nothing
-                h2 = get_prop(g, out[id], :h)
-                set_prop!(g, out[oid], :h, -psi-h2)
-            end
-            v12 = opposite_vertex(g, v)
-            if v12!=nothing
-                h = get_prop(g, v, :h)
-                h1 = get_prop(g, out[1], :h)
-                h2 = get_prop(g, out[2], :h)
-                #phiR = angle((1-exp(im*phi)*k)/(k-exp(im*phi)))
-                psiR = angle(-(k*exp(im*psi)+1)/(exp(im*psi)+k))
-                h12 = psiR-h-pi
-                set_prop!(g, v12, :h, h12)
-            end
-        end
-    end
+    setup_h2!(g)
 end
-
-
-function sineGordon(h, h1, h12, h2, k)
-    diff = sin(0.5*(h1+h2-h-h12))-k*sin(0.5*(h+h1+h2+h12))
-    return diff < 10^-7
-end
-
 
 function uMatrix0(delta, dH)
     [cot(delta/2)*dH im;im cot(delta/2)/dH]
@@ -258,13 +221,6 @@ function setup_lax!(g::MetaDiGraph)
         println("You need first to assign a Gauss map to the vertices")
         return false
     end
-    m, n = props(g)[:dim]
-    set_eprops!(g, spherical_dist, :gauss, :delta)
-    set_vprops_out!(g, get_angles, :gauss, :oangle)
-    set_vprops_inn!(g, get_angles, :gauss, :iangle)
-    set_vprops_left!(g, get_angles, :gauss, :langle)
-    set_vprops_right!(g, get_angles, :gauss, :rangle)
-    setup_h2!(g)
     for e in edges(g)
         s, t = src(e), dst(e)
         delta = get_prop(g, e, :delta)
@@ -297,8 +253,6 @@ function setup_frame!(g::MetaDiGraph; t=0.0)
             set_prop!(g, dst, :frame, lax*phi)
             set_prop!(g, dst, :dframe, dlax*phi+lax*phit)
         else
-            println("Hier andersherum")
-            @show e
             lax = get_lax(g, reverse(e), t)
             dlax = get_dlax(g, reverse(e), t)
             ilax = inv(lax)
@@ -342,7 +296,7 @@ spherical_dist(q1::Quaternion, q2::Quaternion) = acos(dot(q1, q2))
 
 function get_angles(
     n::Quaternion, n1::Quaternion, n2::Quaternion)::Float64
-    a = cross(n1,n)
-    b = cross(n,n2)
+    a = normalize(cross(n1,n))
+    b = normalize(cross(n2,n))
     acos(dot(a,b))
 end

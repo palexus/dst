@@ -2,9 +2,11 @@ include("combinatoric.jl")
 include("knet.jl")
 using Makie: textslider, lift, mesh, wireframe!, hbox, vbox
 using Test
+using LinearAlgebra: det
 
 
 function test_knet!(g::MetaDiGraph)
+    passed = true
     for e in edges(g)
         v,w = src(e),dst(e)
         f = get_prop(g, v, :surface)
@@ -20,6 +22,7 @@ function test_knet!(g::MetaDiGraph)
                 diff = imag(f1-f)-cross(n,n1)
                 @test zero(Quaternion) ≈ diff atol=10^-7
             catch TestSetException
+                passed = false
                 println("Test failed for the edge $e")
                 @show f1, f
                 @show n1, n
@@ -29,49 +32,103 @@ function test_knet!(g::MetaDiGraph)
                 diff = imag(f1-f)-cross(n1,n)
                 @test zero(Quaternion) ≈ diff atol=10^-7
             catch TestSetException
+                passed = false
                 println("Test failed for the edge $e")
                 @show f1, f
                 @show n1, n
             end
         end
     end
+    return passed
 end
 
+
 function test_setup_lax!(g::MetaDiGraph)
+    passed = true
     for v in vertices(g)
         out = outneighbors(g, v)
         v12 = opposite_vertex(g, v)
-        if v12!=nothing
+        if v12!=nothing && left(g, v)!=nothing && right(g,v)!=nothing
             U = get_prop(g, v, out[1], :lax)
             V1 = get_prop(g, out[1], v12, :lax)
             V = get_prop(g, v, out[2], :lax)
             U2 = get_prop(g, out[2], v12, :lax)
-            @test V1*U-U2*V ≈ zeros(2,2) atol=10^-7
+            try
+                @test V1*U-U2*V ≈ zeros(2,2) atol=10^-5
+            catch TestSetException
+                passed = false
+                @show v, out[1], out[2], v12
+            end
         end
     end
+    return passed
 end
 
 
 function test_setup_h!(g::MetaDiGraph)
-    faces = get_quads(g)
-    for f in faces
-        i, i1, i2, i12 = sort(f)
-        h = get_prop(g, i, :h)
-        h1 = get_prop(g, i1, :h)
-        h2 = get_prop(g, i2, :h)
-        h12 = get_prop(g, i12, :h)
-        deltau = get_prop(g, i, i1, :delta)
-        deltav = get_prop(g, i, i2, :delta)
-        k = tan(deltau/2)*tan(deltav/2)
-        try
-            @test sineGordon(h, h1, h12, h2, k)
-        catch TestSetException
-            println("Test failed at the face")
-            @show f
-            @show h, h1, h2, h12, k
-            println(sin(0.5*(h1+h2-h-h12))-k*sin(0.5*(h+h1+h2+h12)))
+    passed = true
+    for v in vertices(g)
+        v2=left(g,v)
+        v1=right(g,v)
+        v12=opposite_vertex(g,v)
+        if v1!=nothing && v2!=nothing && v12!=nothing
+            deltau=get_prop(g, v, v1, :delta)
+            deltav=get_prop(g, v, v2, :delta)
+            k = tan(deltau/2)*tan(deltav/2)
+            H = get_prop(g, v, :h)
+            H1 = get_prop(g, v1, :h)
+            H2 = get_prop(g, v2, :h)
+            H12 = get_prop(g, v12, :h)
+            try
+                @test H12*H ≈ (k+H1*H2)/(1+k*H1*H2) atol=10^-7
+            catch e
+                if typeof(e)<:TestSetException
+                    passed = false
+                    println("Test failed at the face")
+                    @show v, v1, v12, v2
+                    @show h, h1, h12, h2, k
+                elseif typeof(e)<:UndefVarError
+                    @show v, v1, v12, v2
+                else
+                    rethrow(e)
+                end
+            end
         end
     end
+    return passed
+end
+
+
+function test_setup_frame!(g::MetaDiGraph)
+    passed = true
+    m, n = get_prop(g, :dim)
+    for v=1:m
+        next = mod(v, m)+1
+        phi = get_prop(g, v, :frame)
+        phi1 = get_prop(g, next, :frame)
+        laxr = get_prop(g, v, right(g,v), :lax)
+        laxl = get_prop(g, next, left(g,next), :lax)
+        actphi = get_prop(g, right(g,v), :frame)
+        # Normalize for the test (overlap does not work of course without norm)
+        phi = 1/sqrt(det(phi))*phi
+        phi1 = 1/sqrt(det(phi1))*phi1
+        laxl = 1/sqrt(det(laxl))*laxl
+        laxr = 1/sqrt(det(laxr))*laxr
+        actphi = 1/sqrt(det(actphi))*actphi
+        try
+            @test abs.(laxr*phi) ≈ abs.(laxl*phi1) atol=10^-7
+            @test abs.(laxr*phi) ≈ abs.(actphi) atol=10^-7
+            @test abs.(laxl*phi1) ≈ abs.(actphi) atol=10^-7
+        catch TestSetException
+            passed = false
+            println("Test failed at the pair")
+            @show v, next
+            @show laxr, phi
+            @show laxl, phi1
+            @show get_prop(g, right(g,v), :frame)
+        end
+    end
+    return passed
 end
 
 
@@ -106,14 +163,20 @@ function my_plot!(g::MetaDiGraph)
     end
     sverts = matToR3.(actualgauss)
     sverts = [sverts[i][j] for i=1:length(sverts), j=1:3]
+    geog = copy(g)
+    knet!(geog)
+    geoverts = qToR3.(get_vprops(g, :surface))
+    geoverts = [geoverts[i][j] for i=1:length(geoverts), j=1:3]
 
     scene1 = mesh(verts, conn, color=color, shading=false)
     wireframe!(scene1[end][1], color = (:black, 0.6), linewidth = 3)
+    scene4 = mesh(geoverts, conn, color=color, shading=false)
+    wireframe!(scene4[end][1], color = (:black, 0.6), linewidth = 3)
     scene2 = mesh(nverts, conn, color=color, shading=false)
     wireframe!(scene2[end][1], color = (:black, 0.6), linewidth = 3)
     scene3 = mesh(sverts, conn, color=color, shading=false)
     wireframe!(scene3[end][1], color = (:black, 0.6), linewidth = 3)
-    display(hbox(scene1, vbox(scene2, scene3)))
+    display(hbox(vbox(scene4, scene1), vbox(scene2, scene3)))
 end
 
 function plot_gauss(g::MetaDiGraph)
@@ -130,49 +193,52 @@ function plot_gauss(g::MetaDiGraph)
 end
 
 
-function initial_condition_zigzag(m::Int, n::Int)
+function initial_condition_zigzag(m::Int, n::Int, periodic::Bool)
     q = Quaternion([0,0,1])
-    c1 = sample_small_circle(q, 0.15, m)
-    c2 = sample_small_circle(q, 0.1, m; shift=true)
-    gauss = propagate_zigzag(c1, c2, nextN, n-2)
+    if periodic
+        c1 = sample_small_circle(q, 0.15, m)
+        c2 = sample_small_circle(q, 0.1, m; shift=true)
+        gauss = propagate_zigzag(c1, c2, nextN, n-2)
+    else
+        c1 = sample_small_circle(q, 0.15, m-1)
+        c2 = sample_small_circle(q, 0.1, m-1; shift=true)
+        gauss = propagate_zigzag(c1, c2, nextN, n-2)
+        gauss = vcat(gauss, reshape(gauss[1, :], (1, n)))
+    end
     gauss
 end
 
 
 ####### plot knet
-m = 9
-n = 3
-g = zigzag(m,n, periodic=true)
-gauss = initial_condition_zigzag(m, n)
-set_vprops!(g, gauss, :gauss)
-#knet!(g)
-#test_knet!(g)
-#myplot!(g)
-#plot_gauss(g)
+m = 20
+n = 20
+periodic = false
+g = zigzag(m,n, periodic=periodic)
 
+# Initial Data
+gauss = initial_condition_zigzag(m, n, periodic)
+set_vprops!(g, gauss, :gauss)
+
+# setup everything
+setup_h!(g)
 setup_lax!(g)
-println("---------------")
-test_setup_lax!(g)
 setup_frame!(g, t=0)
 symBobenko(g)
-test_knet!(g)
-
-print_vprop(g, :dframe)
 
 
+# Here are the tests
+println("---------------")
+@test test_setup_h!(g)
+println("---------------")
+@test test_setup_lax!(g)
+println("---------------")
+@test test_knet!(g)
+println("---------------")
+
+# Alg surface plot and plot geo/alg Gauss/surface plot
 myplot!(g)
 my_plot!(g)
 
-print_vprop(g, :h)
-
-
-
-sig3 = -im*[1 0;0 -1]
-phi = get_prop(g,1,:frame)
-phi1 = get_prop(g, m+1,:frame)
-lax = get_lax(g, 1, m+1, 0)
-
-get_prop(g, 1, 11, :lax)
 
 
 
@@ -186,35 +252,16 @@ gauss = build_gauss(great1, great2)
 gr = di_grid(m,n)
 set_vprops!(gr, gauss, :gauss)
 
-#knet2!(gr)
+setup_h!(gr)
+test_setup_h!(gr)
+
 setup_lax!(gr)
 setup_frame!(gr)
 symBobenko(gr)
 myplot!(gr)
 
 
-out = outneighbors(gr, 24)
-phiU1 = get_prop(gr, 34, :oangle)
-phiU2 = get_prop(gr, 34, :langle)
-phiU3 = get_prop(gr, 34, :iangle)
-phiU4 = get_prop(gr, 34, :rangle)
-
-phiU1+phiU2+phiU3+phiU4
-2pi
-
-phiU = get_prop(gr, 14, :oangle)
-phiL = get_prop(gr, 15, :langle)
-phiR = get_prop(gr, 34, :rangle)
-phiD = get_prop(gr, 35, :iangle)
-
-deltau = get_prop(gr, 14, 15, :delta)
-deltav = get_prop(gr, 14, 34, :delta)
-k = tan(deltau/2)*tan(deltav/2)
-
-phiR2 = angle(-(k*exp(im*(phiU))+1)/(exp(im*(phiU))+k))
-phi = angle(-(k*exp(im*(phiR2))+1)/(exp(im*(phiR2))+k))
-
-
+my_plot!(gr)
 
 geogr=di_grid(m,n)
 set_vprops!(geogr, gauss, :gauss)
