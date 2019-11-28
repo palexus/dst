@@ -128,15 +128,15 @@ end
 
 function h_on_first_row!(g::MetaDiGraph)
     m, n = get_prop(g, :dim)
-    S = 0.5*sum([(-1)^k*get_prop(g, m+k, :iangle) for k=1:m])
-    T = 0.5*sum([(-1)^k*get_prop(g, k, :oangle) for k=1:m])
+    S = 0.5*sum([-(-1)^k*get_prop(g, m+k, :iangle) for k=1:m])
+    T = 0.5*sum([-(-1)^k*get_prop(g, k, :oangle) for k=1:m])
     set_prop!(g, 1, :h, exp(im*S))
     set_prop!(g, m+1, :h, exp(im*T))
     for v=2:m
         out = sorted_outneighbors(g, v)
         Q = exp(im*get_prop(g, out[1], :iangle))
         H = get_prop(g, v-1, :h)
-        H1 = Q/H
+        H1 = Q/H  #Q/H
         set_prop!(g, v, :h, H1)
     end
 end
@@ -144,8 +144,8 @@ end
 
 function setup_h2!(g::MetaDiGraph)
     m, n = get_prop(g, :dim)
-    set_prop!(g, 1, :h, 0)
-    set_prop!(g, m+1, :h, 0)
+    set_prop!(g, 1, :h, 1)
+    set_prop!(g, m+1, :h, 1)
     if get_prop(g, :type)=="zigzag"
         h_on_first_row!(g)
     end
@@ -157,7 +157,7 @@ function setup_h2!(g::MetaDiGraph)
             Q = exp(im*get_prop(g, v, :oangle))
             if haskey(props(g,v1),:h) && !haskey(props(g,v2),:h)
                 H1 = get_prop(g, v1, :h)
-                H2 = Q/H1
+                H2 = Q/H1  #Q/H1
                 set_prop!(g, v2, :h, H2)
             elseif haskey(props(g,v2),:h) && !haskey(props(g,v1),:h)
                 H2 = get_prop(g, v2, :h)
@@ -173,6 +173,7 @@ function setup_h2!(g::MetaDiGraph)
                 deltav = get_prop(g, v1, v12, :delta)
                 k = tan(deltau/2)*tan(deltav/2)
                 R = -(k*Q+1)/(Q+k)
+                #R = exp(im*get_prop(g, v1, :langle))
                 H12 = -1/H/R
                 set_prop!(g, v12, :h, H12)
             elseif v2!=nothing
@@ -180,7 +181,8 @@ function setup_h2!(g::MetaDiGraph)
                 deltau = get_prop(g, v2, v12, :delta)
                 k = tan(deltau/2)*tan(deltav/2)
                 R = -(k*Q+1)/(Q+k)
-                H12 = -1/H/R
+                #R = exp(im*get_prop(g, v2, :rangle))
+                H12 = -1/H/R # -R/H
                 set_prop!(g, v12, :h, H12)
             end
         end
@@ -295,6 +297,8 @@ function setup_frame!(g::MetaDiGraph; t=0.0)
             set_prop!(g, dst, :frame, lax*phi)
             set_prop!(g, dst, :dframe, dlax*phi+lax*phit)
         else
+            println("Hier andersherum")
+            @show e
             lax = get_lax(g, reverse(e), t)
             dlax = get_dlax(g, reverse(e), t)
             ilax = inv(lax)
@@ -310,7 +314,7 @@ function symBobenko(g::MetaDiGraph)
     for v in vertices(g)
         phi = get_prop(g, v, :frame)
         phit = get_prop(g, v, :dframe)
-        surf = matToQ(2(inv(phi)*phit))
+        surf = matToQ(2*inv(phi)*phit)
         set_prop!(g, v, :surface, surf)
     end
 end
@@ -338,8 +342,7 @@ spherical_dist(q1::Quaternion, q2::Quaternion) = acos(dot(q1, q2))
 
 function get_angles(
     n::Quaternion, n1::Quaternion, n2::Quaternion)::Float64
-    edge1 = normalize(n1-n)
-    edge2 = normalize(n2-n)
-    #asin(abs(cross(edge1, edge2)))
-    acos(dot(edge1, edge2))
+    a = cross(n1,n)
+    b = cross(n,n2)
+    acos(dot(a,b))
 end

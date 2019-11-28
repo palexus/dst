@@ -11,18 +11,28 @@ function test_knet!(g::MetaDiGraph)
         f1 = get_prop(g, w, :surface)
         n = get_prop(g, v, :gauss)
         n1 = get_prop(g, w, :gauss)
-        #phi = get_prop(g, v, :frame)
-        #phi1 = get_prop(g, w, :frame)
-        #n = matToQ(-im*inv(phi)*[1 0;0 -1]*phi)
-        #n1 = matToQ(-im*inv(phi1)*[1 0;0 -1]*phi1)
+        phi = get_prop(g, v, :frame)
+        phi1 = get_prop(g, w, :frame)
+        n = matToQ(-im*inv(phi)*[1 0;0 -1]*phi)
+        n1 = matToQ(-im*inv(phi1)*[1 0;0 -1]*phi1)
         if get_prop(g, e, :dir)=="left"
-            diff = imag(f1-f)-cross(n,n1)
-            @show e
-            @test zero(Quaternion) ≈ diff atol=10^-7
+            try
+                diff = imag(f1-f)-cross(n,n1)
+                @test zero(Quaternion) ≈ diff atol=10^-7
+            catch TestSetException
+                println("Test failed for the edge $e")
+                @show f1, f
+                @show n1, n
+            end
         else
-            @show e
-            diff = imag(f1-f)-cross(n1,n)
-            @test zero(Quaternion) ≈ diff atol=10^-7
+            try
+                diff = imag(f1-f)-cross(n1,n)
+                @test zero(Quaternion) ≈ diff atol=10^-7
+            catch TestSetException
+                println("Test failed for the edge $e")
+                @show f1, f
+                @show n1, n
+            end
         end
     end
 end
@@ -31,12 +41,13 @@ function test_setup_lax!(g::MetaDiGraph)
     for v in vertices(g)
         out = outneighbors(g, v)
         v12 = opposite_vertex(g, v)
-        U = get_prop(g, v, out[1], :lax)
-        V1 = get_prop(g, out[1], v12, :lax)
-        V = get_prop(g, v, out[2], :lax)
-        U2 = get_prop(g, out[2], v12, :lax)
-        @show v
-        @test V1*U-U2*V ≈ zeros(2,2) atol=10^-7
+        if v12!=nothing
+            U = get_prop(g, v, out[1], :lax)
+            V1 = get_prop(g, out[1], v12, :lax)
+            V = get_prop(g, v, out[2], :lax)
+            U2 = get_prop(g, out[2], v12, :lax)
+            @test V1*U-U2*V ≈ zeros(2,2) atol=10^-7
+        end
     end
 end
 
@@ -129,8 +140,8 @@ end
 
 
 ####### plot knet
-m = 11
-n = 10
+m = 9
+n = 3
 g = zigzag(m,n, periodic=true)
 gauss = initial_condition_zigzag(m, n)
 set_vprops!(g, gauss, :gauss)
@@ -140,31 +151,28 @@ set_vprops!(g, gauss, :gauss)
 #plot_gauss(g)
 
 setup_lax!(g)
-println("---------------------------")
-test_setup_h!(g)
-
-setup_frame!(g)
-
+println("---------------")
+test_setup_lax!(g)
+setup_frame!(g, t=0)
 symBobenko(g)
-#test_knet!(g)
+test_knet!(g)
+
+print_vprop(g, :dframe)
+
 
 myplot!(g)
 my_plot!(g)
 
-
-psi1 = get_prop(g, 11, :oangle)
-psi2 = get_prop(g, 11, :langle)
-psi3 = get_prop(g, 11, :iangle)
-psi4 = get_prop(g, 11, :rangle)
-
-psi1+psi2+psi3+psi4
+print_vprop(g, :h)
 
 
 
+sig3 = -im*[1 0;0 -1]
+phi = get_prop(g,1,:frame)
+phi1 = get_prop(g, m+1,:frame)
+lax = get_lax(g, 1, m+1, 0)
 
-
-
-
+get_prop(g, 1, 11, :lax)
 
 
 
