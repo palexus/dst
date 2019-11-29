@@ -163,13 +163,9 @@ function setup_h2!(g::MetaDiGraph)
                 set_prop!(g, v1, :h, H1)
             end
         end
-        if v12!=nothing
-            try
-                Q = exp(im*get_prop(g, v, :oangle))
-                H = get_prop(g, v, :h)
-            catch KeyError
-                continue
-            end
+        if v12!=nothing && v1!=nothing && v2!=nothing
+            Q = exp(im*get_prop(g, v, :oangle))
+            H = get_prop(g, v, :h)
             if v1!=nothing
                 deltau = get_prop(g, v, v1, :delta)
                 deltav = get_prop(g, v1, v12, :delta)
@@ -195,11 +191,11 @@ end
 function setup_h!(g::MetaDiGraph)
     m, n = get_prop(g, :dim)
     set_eprops!(g, spherical_dist, :gauss, :delta)
-    set_vprops_out!(g, get_angles, :gauss, :oangle)
+    set_vprops_out!(g, spherical_angle, :gauss, :oangle)
     set_prop!(g, 1, :h, 1)
     set_prop!(g, m+1, :h, 1)
     if get_prop(g, :type)=="zigzag"
-        set_vprops_inn!(g, get_angles, :gauss, :iangle)
+        set_vprops_inn!(g, spherical_angle, :gauss, :iangle)
         h_on_first_row!(g)
     end
     setup_h2!(g)
@@ -294,7 +290,7 @@ end
 
 spherical_dist(q1::Quaternion, q2::Quaternion) = acos(dot(q1, q2))
 
-function get_angles(
+function spherical_angle(
     n::Quaternion, n1::Quaternion, n2::Quaternion)::Float64
     a = normalize(cross(n1,n))
     b = normalize(cross(n2,n))

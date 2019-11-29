@@ -404,47 +404,6 @@ function set_vprops!(g::MetaDiGraph{T,S}, func::Function, argname, propname)  wh
     end
 end
 
-function set_vprops_right!(g::MetaDiGraph, func::Function, argname, propname)
-    for v in vertices(g)
-        inn = inneighbors(g, v)
-        if length(inn)>0
-            v1 = right(g, v)
-            if v1!=nothing
-                id = findfirst(x->left(g,x)==v, inn)
-                if id!=nothing
-                    vbar1 = inn[id]
-                    arg = get_prop(g, v, argname)
-                    arg1 = get_prop(g, vbar1, argname)
-                    arg2 = get_prop(g, v1, argname)
-                    set_prop!(g, v, propname, func(arg, arg1, arg2))
-                end
-            end
-        end
-    end
-end
-
-
-function set_vprops_left!(g::MetaDiGraph, func::Function, argname, propname)
-    for v in vertices(g)
-        inn = inneighbors(g, v)
-        if length(inn)>0
-            v2 = left(g, v)
-            if v2!=nothing
-                id = findfirst(x->right(g,x)==v, inn)
-                if id!=nothing
-                    vbar2=inn[id] 
-                    arg = get_prop(g, v, argname)
-                    arg2 = get_prop(g, vbar2, argname)
-                    arg1 = get_prop(g, v2, argname)
-                    set_prop!(g, v, propname, func(arg, arg1, arg2))
-                end
-            end
-        end
-    end
-end
-
-
-
 
 function set_vprops_out!(g::MetaDiGraph{T,S}, func::Function, argname, propname; argnum=3)  where {T<:Int, S<:Any}
     if argnum == 3

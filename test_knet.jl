@@ -131,19 +131,36 @@ function test_setup_frame!(g::MetaDiGraph)
     return passed
 end
 
+function plotverts(g::MetaDiGraph, t::Real)
+    setup_frame!(g, t=t)
+    symBobenko(g)
+    surf = get_vprops(g, :surface)
+    verts = qToR3.(surf)
+    verts = [verts[i][j] for i=1:length(verts), j=1:3]
+    return verts
+end
 
 function myplot!(g::MetaDiGraph)
     conn = get_triangles(g)
     conn = [conn[i][j] for i=1:length(conn), j=1:3]
     color = zeros(nv(g))
     color[1]=-0.2
-    surf = get_vprops(g, :surface)
-    verts = qToR3.(surf)
-    verts = [verts[i][j] for i=1:length(verts), j=1:3]
-    scene = mesh(verts, conn, color=color, shading=false)
+
+    s1 = slider(LinRange(-1.0, 1.0, 1001),
+          raw = true, camera = campixel!, start = 0.0)
+    kx = s1[end][:value]
+
+    scene = Scene()
+    verts =  lift(x->plotverts(g, x), kx)
+    mesh!(scene, verts,
+          conn, color=color, shading=false, transparency=true)
     wireframe!(scene[end][1], color = (:black, 0.6), linewidth = 3)
-    display(scene)
+    scatter!(scene, verts, markersize = .03)
+
+    hbox(scene, s1, parent = Scene(resolution = (800, 600)))
 end
+
+myplot!(g)
 
 function my_plot!(g::MetaDiGraph)
     conn = get_triangles(g)
@@ -165,7 +182,7 @@ function my_plot!(g::MetaDiGraph)
     sverts = [sverts[i][j] for i=1:length(sverts), j=1:3]
     geog = copy(g)
     knet!(geog)
-    geoverts = qToR3.(get_vprops(g, :surface))
+    geoverts = qToR3.(get_vprops(geog, :surface))
     geoverts = [geoverts[i][j] for i=1:length(geoverts), j=1:3]
 
     scene1 = mesh(verts, conn, color=color, shading=false)
@@ -222,8 +239,10 @@ set_vprops!(g, gauss, :gauss)
 # setup everything
 setup_h!(g)
 setup_lax!(g)
-setup_frame!(g, t=0)
+setup_frame!(g, t=0.0)
 symBobenko(g)
+
+myplot!(g)
 
 
 # Here are the tests
@@ -249,11 +268,12 @@ great1, great2 = generate_Amsler(Quaternion([1, 0, 0]),
                                  Quaternion([0, 1, 0]), m, n)
 gauss = build_gauss(great1, great2)
 
-gr = di_grid(m,n)
+gauss = gauss[1:8, 1:8]
+
+gr = di_grid(8,8)
 set_vprops!(gr, gauss, :gauss)
 
 setup_h!(gr)
-test_setup_h!(gr)
 
 setup_lax!(gr)
 setup_frame!(gr)
@@ -263,6 +283,7 @@ myplot!(gr)
 
 my_plot!(gr)
 
+gauss = build_gauss(great1, great2)
 geogr=di_grid(m,n)
 set_vprops!(geogr, gauss, :gauss)
 knet!(geogr)
