@@ -166,23 +166,12 @@ function setup_h2!(g::MetaDiGraph)
         if v12!=nothing && v1!=nothing && v2!=nothing
             Q = exp(im*get_prop(g, v, :oangle))
             H = get_prop(g, v, :h)
-            if v1!=nothing
-                deltau = get_prop(g, v, v1, :delta)
-                deltav = get_prop(g, v1, v12, :delta)
-                k = tan(deltau/2)*tan(deltav/2)
-                R = -(k*Q+1)/(Q+k)
-                #R = exp(im*get_prop(g, v1, :langle))
-                H12 = -1/H/R
-                set_prop!(g, v12, :h, H12)
-            elseif v2!=nothing
-                deltav = get_prop(g, v, v2, :delta)
-                deltau = get_prop(g, v2, v12, :delta)
-                k = tan(deltau/2)*tan(deltav/2)
-                R = -(k*Q+1)/(Q+k)
-                #R = exp(im*get_prop(g, v2, :rangle))
-                H12 = -1/H/R # -R/H
-                set_prop!(g, v12, :h, H12)
-            end
+            deltau = get_prop(g, v, v1, :delta)
+            deltav = get_prop(g, v1, v12, :delta)
+            k = tan(deltau/2)*tan(deltav/2)
+            R = -(k*Q+1)/(Q+k)
+            H12 = -1/H/R
+            set_prop!(g, v12, :h, H12)
         end
     end
 end
@@ -192,14 +181,16 @@ function setup_h!(g::MetaDiGraph)
     m, n = get_prop(g, :dim)
     set_eprops!(g, spherical_dist, :gauss, :delta)
     set_vprops_out!(g, spherical_angle, :gauss, :oangle)
-    set_prop!(g, 1, :h, 1)
-    set_prop!(g, m+1, :h, 1)
     if get_prop(g, :type)=="zigzag"
         set_vprops_inn!(g, spherical_angle, :gauss, :iangle)
         h_on_first_row!(g)
+    else
+        set_prop!(g, 1, :h, 1)
+        set_prop!(g, m+1, :h, exp(im*get_prop(g, 1, :oangle)/2))
     end
     setup_h2!(g)
 end
+
 
 function uMatrix0(delta, dH)
     [cot(delta/2)*dH im;im cot(delta/2)/dH]
@@ -295,7 +286,11 @@ function spherical_angle(
     a = normalize(cross(n1,n))
     b = normalize(cross(n2,n))
     o = orientation(n, a, b)
-    o ? acos(dot(a,b)) : -acos(dot(a,b))
+    if n.k==1
+        return o ? -acos(dot(a,b)) : acos(dot(a,b))
+    else
+        return o ? acos(dot(a,b)) : -acos(dot(a,b))
+    end
 end
 
 

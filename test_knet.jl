@@ -1,9 +1,10 @@
 include("combinatoric.jl")
 include("knet.jl")
 using Makie: textslider, lift, mesh!, wireframe!, hbox, vbox, campixel!, slider
-using Makie: Scene, scatter!
+using Makie: Scene, scatter!, mesh
 using Test
 using LinearAlgebra: det
+using Debugger
 
 
 function test_knet!(g::MetaDiGraph)
@@ -83,16 +84,10 @@ function test_setup_h!(g::MetaDiGraph)
             try
                 @test H12*H ≈ (k+H1*H2)/(1+k*H1*H2) atol=10^-7
             catch e
-                if typeof(e)<:TestSetException
-                    passed = false
-                    println("Test failed at the face")
-                    @show v, v1, v12, v2
-                    @show h, h1, h12, h2, k
-                elseif typeof(e)<:UndefVarError
-                    @show v, v1, v12, v2
-                else
-                    rethrow(e)
-                end
+                passed = false
+                println("Test failed at the face")
+                @show v, v1, v12, v2
+                @show H, H1, H12, H2, k
             end
         end
     end
@@ -161,7 +156,6 @@ function myplot!(g::MetaDiGraph)
     hbox(scene, s1, parent = Scene(resolution = (800, 600)))
 end
 
-myplot!(g)
 
 function my_plot!(g::MetaDiGraph)
     conn = get_triangles(g)
@@ -197,13 +191,13 @@ function my_plot!(g::MetaDiGraph)
     display(hbox(vbox(scene4, scene1), vbox(scene2, scene3)))
 end
 
-function plot_gauss(g::MetaDiGraph)
+function geo_plot(g::MetaDiGraph)
     conn = get_triangles(g)
     conn = [conn[i][j] for i=1:length(conn), j=1:3]
     color = zeros(nv(g))
     color[1]=-0.2
-    gauss = get_vprops(g, :gauss)
-    verts = qToR3.(gauss)
+    surf = get_vprops(g, :surface)
+    verts = qToR3.(surf)
     verts = [verts[i][j] for i=1:length(verts), j=1:3]
     scene = mesh(verts, conn, color=color, shading=false)
     wireframe!(scene[end][1], color = (:black, 0.6), linewidth = 3)
@@ -266,10 +260,10 @@ my_plot!(g)
 ###### Plot Amsler
 m, n = 20, 20
 great1, great2 = generate_Amsler(Quaternion([1, 0, 0]),
-                                 Quaternion([0, 1, 0]), m, n)
-gauss = build_gauss(great1, great2)[1:8,1:8]
+                                 Quaternion([0, 0, 1]), m, n)
+gauss = build_gauss(great1, great2)
 
-gr = di_grid(8,8)
+gr = di_grid(20, 20)
 
 set_vprops!(gr, gauss, :gauss)
 
@@ -278,13 +272,27 @@ setup_h!(gr)
 setup_lax!(gr)
 setup_frame!(gr)
 symBobenko(gr)
+
 myplot!(gr)
-
-
 my_plot!(gr)
+
+print_vprop(gr, :gauss)
+
+print_vprop(gr, :oangle)
+print_vprop(gr, :h)
+print_eprop(gr, :dir)
+# Here are the tests
+println("---------------")
+@test test_setup_h!(gr)
+println("---------------")
+@test test_setup_lax!(gr)
+println("---------------")
+@test test_knet!(gr)
+println("---------------")
 
 gauss = build_gauss(great1, great2)
 geogr=di_grid(m,n)
 set_vprops!(geogr, gauss, :gauss)
 knet!(geogr)
-myplot!(geogr)
+
+geo_plot(geogr)
