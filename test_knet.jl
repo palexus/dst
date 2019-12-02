@@ -1,6 +1,7 @@
 include("combinatoric.jl")
 include("knet.jl")
-using Makie: textslider, lift, mesh, wireframe!, hbox, vbox
+using Makie: textslider, lift, mesh!, wireframe!, hbox, vbox, campixel!, slider
+using Makie: Scene, scatter!
 using Test
 using LinearAlgebra: det
 
@@ -213,11 +214,11 @@ end
 function initial_condition_zigzag(m::Int, n::Int, periodic::Bool)
     q = Quaternion([0,0,1])
     if periodic
-        c1 = sample_small_circle(q, 0.15, m)
+        c1 = sample_small_circle(q, 0.3, m)
         c2 = sample_small_circle(q, 0.1, m; shift=true)
         gauss = propagate_zigzag(c1, c2, nextN, n-2)
     else
-        c1 = sample_small_circle(q, 0.15, m-1)
+        c1 = sample_small_circle(q, 0.3, m-1)
         c2 = sample_small_circle(q, 0.1, m-1; shift=true)
         gauss = propagate_zigzag(c1, c2, nextN, n-2)
         gauss = vcat(gauss, reshape(gauss[1, :], (1, n)))
@@ -228,7 +229,7 @@ end
 
 ####### plot knet
 m = 20
-n = 20
+n = 40
 periodic = false
 g = zigzag(m,n, periodic=periodic)
 
@@ -266,11 +267,10 @@ my_plot!(g)
 m, n = 20, 20
 great1, great2 = generate_Amsler(Quaternion([1, 0, 0]),
                                  Quaternion([0, 1, 0]), m, n)
-gauss = build_gauss(great1, great2)
-
-gauss = gauss[1:8, 1:8]
+gauss = build_gauss(great1, great2)[1:8,1:8]
 
 gr = di_grid(8,8)
+
 set_vprops!(gr, gauss, :gauss)
 
 setup_h!(gr)

@@ -294,5 +294,36 @@ function spherical_angle(
     n::Quaternion, n1::Quaternion, n2::Quaternion)::Float64
     a = normalize(cross(n1,n))
     b = normalize(cross(n2,n))
-    acos(dot(a,b))
+    o = orientation(n, a, b)
+    o ? acos(dot(a,b)) : -acos(dot(a,b))
+end
+
+
+stereo(x::Quaternion) = x.k!=1 ? 1/(1-x.k)*(x.i+im*x.j) : 1/(1+x.k)*(x.i+im*x.j)
+
+function dstereoN(p::Quaternion, x::Quaternion)
+    dF = [1 0 p.i/(1-p.k)^2;0 1 p.j/(1-p.k)^2]
+    X = qToR3(x)
+    return dF*X
+end
+
+function dstereoS(p::Quaternion, x::Quaternion)
+    dF = [1 0 -p.i/(1+p.k)^2;0 1 -p.j/(1+p.k)^2]
+    X = qToR3(x)
+    return dF*X
+end
+
+
+function orientation(n::Quaternion, n1::Quaternion, n2::Quaternion)::Bool
+    if n.k!=1
+        x1 = dstereoN(n, n1)
+        x2 = dstereoN(n, n2)
+        x = [[x1, x2][i][j] for i=1:2, j=1:2]
+        return sign(det(x))==1
+    else
+        x1 = dstereoS(n, n1)
+        x2 = dstereoS(n, n2)
+        x = [[x1, x2][i][j] for i=1:2, j=1:2]
+        return sign(det(x))==1
+    end
 end
